@@ -86,7 +86,11 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 7: Add editor + update Charter Info ────────────────
   log(7, "Setting permissions and updating Charter Info");
-  await asana.addProjectMember(charterProjectGid, C.EDITOR_MEMBER);
+  try {
+    await asana.addProjectMember(charterProjectGid, C.EDITOR_MEMBER);
+  } catch (err) {
+    logger.warn(`Could not add editor member: ${err.message}`);
+  }
 
   // Find the Charter Info task (section index 2)
   if (sections.length > 2) {
@@ -169,7 +173,11 @@ async function orchestrateNewCharter(payload) {
   log(10, `Bridging task created: ${bridgingTask.data.gid}`);
 
   // Add editor to checkout project
-  await asana.addProjectMember(checkoutProjectGid, C.EDITOR_MEMBER);
+  try {
+    await asana.addProjectMember(checkoutProjectGid, C.EDITOR_MEMBER);
+  } catch (err) {
+    logger.warn(`Could not add editor to checkout: ${err.message}`);
+  }
 
   // ── Step 11: Save provisioning state to Firestore ───────────
   log(11, "Saving provisioning state to Firestore");

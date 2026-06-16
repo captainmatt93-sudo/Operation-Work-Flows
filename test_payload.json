@@ -1,0 +1,29 @@
+{
+  "data": {
+    "section": "Create",
+    "sales_force_id": "",
+    "charter_name": "Southern Cross | Downing | 2026-10-15 | 2026-10-22",
+    "start_date": "2026-10-15",
+    "end_date": "2026-10-22",
+    "start_day": "1201397001796765",
+    "end_day": "1201397057046785",
+    "yacht_name": "Southern Cross",
+    "charter_type": "All Inclusive Crewed",
+    "charter_type_id": "1200083909658839",
+    "client_name": "Downing",
+    "contact_name": "Sarah Holt Downing",
+    "contact_email": "sarah.holt.downing@gmail.com",
+    "number_of_guests": "4",
+    "owner_name": "",
+    "sales_force_contact_id": "",
+    "charter_number": "SC-00259",
+    "captain": "\"\"",
+    "chef": "\"\"",
+    "charter_price": 33853.87,
+    "yacht_name_id": "1210332748843385",
+    "boarding_time": {
+      "display": "12:00 PM",
+      "gid": "1200113358975918"
+    }
+  }
+}
