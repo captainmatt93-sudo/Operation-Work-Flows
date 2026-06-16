@@ -83,7 +83,7 @@ async function orchestrateNewCharter(payload) {
     await asana.addTaskToSection(sections[i].gid, trackingTaskGid);
   }
 
-  // ── Step 7: Add editor + update Charter Info task ───────────
+  // ── Step 7: Add editor + update Charter Info + crew detail tasks ─
   log(7, "Setting permissions and updating Charter Info");
   await asana.addProjectMember(charterProjectGid, C.EDITOR_MEMBER);
 
@@ -92,6 +92,8 @@ async function orchestrateNewCharter(payload) {
     const charterInfoTasks = await asana.getSectionTasks(sections[2].gid);
     if (charterInfoTasks.length > 0) {
       await asana.updateTask(charterInfoTasks[0].gid, {
+        start_on: data.start_date,
+        due_on: data.end_date,
         custom_fields: {
           [C.CUSTOM_FIELDS.YACHT_NAME]: data.yacht_name_id,
           [C.CUSTOM_FIELDS.CHARTER_TYPE]: data.charter_type_id,
@@ -101,6 +103,11 @@ async function orchestrateNewCharter(payload) {
           [C.CUSTOM_FIELDS.NUMBER_OF_GUESTS]: data.number_guests,
           [C.CUSTOM_FIELDS.CHARTER_PRICE]: data.charter_price,
           [C.CUSTOM_FIELDS.CONTACT_EMAIL]: data.contact_email,
+          [C.CUSTOM_FIELDS.ACCOUNT_NAME]: data.account_name || data.client_name,
+          [C.CUSTOM_FIELDS.CLIENT_NAME]: data.client_name,
+          [C.CUSTOM_FIELDS.BOARDING_TIME]: data.boarding_time,
+          [C.CUSTOM_FIELDS.START_DAY]: data.start_day_id,
+          [C.CUSTOM_FIELDS.END_DAY]: data.end_day_id,
         },
       });
     }
@@ -147,11 +154,17 @@ async function orchestrateNewCharter(payload) {
   const checkoutProjectGid = checkoutProject.gid || checkoutProject.new_project?.gid;
   log(10, `Checkout project created: ${checkoutProjectGid}`);
 
-  // Create bridging task linked to both projects
+  // Create bridging task linked to both projects (notes format matches real project)
   const bridgingTask = await asana.createTask({
     name: `Check-Out | Check-In, ${charterName}`,
     projects: [charterProjectGid, checkoutProjectGid],
-    notes: `${charterProjectGid},${checkoutProjectGid}`,
+    start_on: data.start_date,
+    due_on: data.end_date,
+    notes: `${checkoutProjectGid}, ${charterProjectGid}`,
+    custom_fields: {
+      [C.CUSTOM_FIELDS.CHARTER_NUMBER]: data.charter_number,
+      [C.CUSTOM_FIELDS.CONTACT_ID]: data.contact_id || "",
+    },
   });
   log(10, `Bridging task created: ${bridgingTask.data.gid}`);
 
@@ -172,7 +185,7 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 12: Create maintenance tasks ───────────────────────
   log(12, "Creating maintenance tasks");
-  await createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data);
+  await createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data, captainGid);
 
   // ── Step 13: Create housekeeping checklists ─────────────────
   log(13, "Creating housekeeping checklists");
@@ -184,7 +197,7 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 15: Back-to-back detection ─────────────────────────
   log(15, "Checking for back-to-back charters");
-  await detectBackToBack(data, charterProjectGid, charterName);
+  await detectBackToBack(data, checkoutProjectGid, charterName);
 
   log("✓", `Charter orchestration complete for ${charterName}`);
   return {
@@ -281,14 +294,18 @@ async function createInOutSchedule(data, charterProjectGid) {
 
 /**
  * Step 15: Search for adjacent charters on the same yacht.
- * If gap ≤ 3 days, create a debrief task and cross-link projects.
+ * If gap ≤ 3 days, create debrief + Previous/Next Charter Scheduled tasks.
+ * Tasks go into specific checkout project sections (matching real project).
  */
-async function detectBackToBack(data, currentProjectGid, charterName) {
+async function detectBackToBack(data, checkoutProjectGid, charterName) {
   const yachtName = data.yacht_name?.trim();
   const startDate = data.start_date || data.start_on;
   const endDate = data.end_date || data.due_on;
 
-  // Search all projects in the Check-Out team for the same yacht
+  // Get checkout project sections for task placement
+  const coSections = await asana.getProjectSections(checkoutProjectGid);
+
+  // Search all projects in the Charter Info board for the same yacht
   const allProjects = await asana.searchTasks({
     "projects.any": C.BOARDS.CHARTER_INFO,
     [`custom_fields.${C.CUSTOM_FIELDS.YACHT_NAME}.value`]: data.yacht_name_id,
@@ -302,6 +319,8 @@ async function detectBackToBack(data, currentProjectGid, charterName) {
 
   for (const proj of allProjects) {
     if (!proj.due_on || !proj.start_on) continue;
+    // Skip self
+    if (proj.name === charterName) continue;
 
     // Days between current start and this charter's end (previous charter)
     const prevDiff = daysBetween(proj.due_on, startDate);
@@ -318,31 +337,60 @@ async function detectBackToBack(data, currentProjectGid, charterName) {
     }
   }
 
-  // If adjacent charter is within 3 days, create debrief task
-  if (closestPrevDays <= 3 && closestPrev) {
-    logger.info(`Back-to-back detected with previous charter (${closestPrevDays} days): ${closestPrev.name}`);
-    await asana.createTask({
-      name: `Pass on ${data.client_name} Debrief`,
-      projects: [currentProjectGid],
-      notes: `Previous charter: ${closestPrev.name}\nGap: ${closestPrevDays} day(s)`,
+  // Section 2 = "Vessel Prep Information" — Previous/Next Charter Scheduled
+  const vesselPrepSection = coSections.length > 2 ? coSections[2].gid : null;
+  // Section 0 = "Untitled" — Debrief tasks
+  const untitledSection = coSections.length > 0 ? coSections[0].gid : null;
+
+  // Create Previous Charter Scheduled task
+  if (closestPrev && closestPrevDays <= 7 && vesselPrepSection) {
+    const prevTask = await asana.createTask({
+      name: `Previous Charter Scheduled - ${closestPrev.name}`,
+      projects: [checkoutProjectGid],
+      due_on: closestPrev.due_on,
     });
+    await asana.addTaskToSection(vesselPrepSection, prevTask.data.gid);
+    logger.info(`Previous charter: ${closestPrev.name} (${closestPrevDays} days gap)`);
   }
 
-  if (closestNextDays <= 3 && closestNext) {
-    logger.info(`Back-to-back detected with next charter (${closestNextDays} days): ${closestNext.name}`);
-    await asana.createTask({
-      name: `Pass on ${data.client_name} Debrief`,
-      projects: [currentProjectGid],
-      notes: `Next charter: ${closestNext.name}\nGap: ${closestNextDays} day(s)`,
+  // Create Next Charter Scheduled task
+  if (closestNext && closestNextDays <= 7 && vesselPrepSection) {
+    const nextTask = await asana.createTask({
+      name: `Next Charter Scheduled - ${closestNext.name}`,
+      projects: [checkoutProjectGid],
+      due_on: closestNext.start_on,
     });
+    await asana.addTaskToSection(vesselPrepSection, nextTask.data.gid);
+    logger.info(`Next charter: ${closestNext.name} (${closestNextDays} days gap)`);
+  }
+
+  // Create debrief tasks in Section 0 if back-to-back (≤3 days)
+  if (closestPrevDays <= 3 && closestPrev && untitledSection) {
+    // Extract previous client name from charter name pattern "Yacht | Client | Start | End"
+    const prevParts = closestPrev.name.split(" | ");
+    const prevClient = prevParts.length > 1 ? prevParts[1] : closestPrev.name;
+
+    const passOnTask = await asana.createTask({
+      name: `Pass on ${yachtName}   ${prevClient} Debrief`,
+      projects: [checkoutProjectGid],
+    });
+    await asana.addTaskToSection(untitledSection, passOnTask.data.gid);
+
+    const getDebriefTask = await asana.createTask({
+      name: `Get Debrief ${charterName}`,
+      projects: [checkoutProjectGid],
+    });
+    await asana.addTaskToSection(untitledSection, getDebriefTask.data.gid);
+    logger.info(`Back-to-back debrief tasks created (${closestPrevDays} day gap)`);
   }
 }
 
 /**
- * Step 12: Create maintenance tasks in the yacht's existing maintenance project.
- * Also links them into the checkout project.
+ * Step 12: Create maintenance tasks matching real project structure.
+ * Creates 6 fixed tasks (with crew assignments) + @Standard Jobs parent with subtasks.
+ * All placed in Section 7 ("Post - Maintenance Info") of checkout project.
  */
-async function createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data) {
+async function createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data, captainGid) {
   const yachtConfig = M.YACHT_MAINTENANCE[yachtName];
   if (!yachtConfig) {
     logger.warn(`No maintenance config for yacht: ${yachtName}`);
@@ -350,22 +398,70 @@ async function createMaintenanceTasks(yachtName, checkoutProjectGid, charterName
   }
 
   const { project: maintProjectGid, jobs, charterSection } = yachtConfig;
-  logger.info(`Creating ${jobs.length} maintenance jobs in project ${maintProjectGid}`);
 
-  // Get the sections of the maintenance project
-  const maintSections = await asana.getProjectSections(maintProjectGid);
-  // Section[1] is typically where new tasks go
-  const targetSectionGid = maintSections.length > 1 ? maintSections[1].gid : maintSections[0].gid;
+  // Get checkout project sections — Section 7 = "Post - Maintenance Info"
+  const coSections = await asana.getProjectSections(checkoutProjectGid);
+  const maintSectionGid = coSections.length > 7 ? coSections[7].gid : null;
 
-  for (const jobName of jobs) {
+  // Common custom fields for all maintenance tasks
+  const maintFields = {
+    [C.CUSTOM_FIELDS.PRIORITY]: C.CUSTOM_FIELDS.PRIORITY_HIGH,
+    [C.CUSTOM_FIELDS.MAINT_TYPE]: C.CUSTOM_FIELDS.MAINT_PREVENTATIVE,
+    [C.CUSTOM_FIELDS.YACHT_NAME]: data.yacht_name_id,
+    [C.CUSTOM_FIELDS.CHARTER_NUMBER]: data.charter_number,
+    [C.CUSTOM_FIELDS.TOTAL_TIME]: 0,
+  };
+
+  // Create the 6 fixed maintenance tasks
+  for (const fixedTask of C.FIXED_MAINT_TASKS) {
+    // @System Check gets assigned to the Captain
+    const assignee = fixedTask.assignee || captainGid || null;
+
     const task = await asana.createTask({
-      name: `${jobName} - ${charterName}`,
-      projects: [maintProjectGid],
+      name: fixedTask.name,
+      projects: [checkoutProjectGid],
+      assignee,
+      due_on: data.end_date,
+      custom_fields: {
+        ...maintFields,
+        [C.CUSTOM_FIELDS.DEPARTMENT]: fixedTask.dept,
+        [C.CUSTOM_FIELDS.MAINT_HOURS]: fixedTask.hours || null,
+      },
     });
-    // Also add to the checkout project so crews see it there
-    await asana.addTaskToProject(task.data.gid, checkoutProjectGid);
-    await asana.addTaskToSection(targetSectionGid, task.data.gid);
+
+    // Place in Section 7
+    if (maintSectionGid) {
+      await asana.addTaskToSection(maintSectionGid, task.data.gid);
+    }
+
+    // Also add to the yacht's maintenance project
+    await asana.addTaskToProject(task.data.gid, maintProjectGid);
   }
+
+  // Create @Standard Jobs as a parent task with subtasks
+  const stdJobsTask = await asana.createTask({
+    name: "@Standard Jobs",
+    projects: [checkoutProjectGid],
+    assignee: captainGid || null,
+    due_on: data.end_date,
+    custom_fields: {
+      ...maintFields,
+      [C.CUSTOM_FIELDS.DEPARTMENT]: C.CUSTOM_FIELDS.DEPT_GENERAL,
+    },
+  });
+
+  if (maintSectionGid) {
+    await asana.addTaskToSection(maintSectionGid, stdJobsTask.data.gid);
+  }
+  await asana.addTaskToProject(stdJobsTask.data.gid, maintProjectGid);
+
+  // Create subtasks under @Standard Jobs
+  for (const jobName of jobs) {
+    await asana.createSubtask(stdJobsTask.data.gid, { name: jobName });
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  logger.info(`Created ${C.FIXED_MAINT_TASKS.length + 1} maintenance tasks + ${jobs.length} subtasks`);
 
   // Update the yacht schedule board if we have a charter section
   if (charterSection) {
@@ -382,8 +478,9 @@ async function createMaintenanceTasks(yachtName, checkoutProjectGid, charterName
 }
 
 /**
- * Step 13: Create housekeeping checklists with stage-based parent tasks
- * and subtask checklists under each.
+ * Step 13: Create housekeeping checklists matching real project structure.
+ * Task naming: "{acronym} | ({client}), {Interior/Exterior} {A/B/C}"
+ * Placed in Section 6 ("Post - House Keeping Info") with custom fields.
  */
 async function createHousekeepingChecklists(yachtName, checkoutProjectGid, charterName, data) {
   const stages = M.YACHT_STAGES[yachtName];
@@ -394,36 +491,67 @@ async function createHousekeepingChecklists(yachtName, checkoutProjectGid, chart
 
   const lists = M.HOUSEKEEPING_LISTS;
 
-  // Get checkout project sections
-  const sections = await asana.getProjectSections(checkoutProjectGid);
+  // Get checkout project sections — Section 6 = "Post - House Keeping Info"
+  const coSections = await asana.getProjectSections(checkoutProjectGid);
+  const hkSectionGid = coSections.length > 6 ? coSections[6].gid : null;
 
-  // Stage definitions: parent task name → { hours, checklist }
+  // Build the yacht acronym and client short name
+  const acronym = C.YACHT_ACRONYMS[yachtName] || yachtName.substring(0, 3);
+  // Extract client from charter name: "Yacht | Client | Start | End"
+  const nameParts = charterName.split(" | ");
+  const clientShort = nameParts.length > 1 ? nameParts[1] : data.client_name || "";
+
+  // Notes format: "checkoutGid | charterName | boarding_time | charter_number"
+  const notesStr = `${checkoutProjectGid} | ${charterName} | ${data.boarding_time || ""} | ${data.charter_number}`;
+
+  // Pay rates based on hours
+  const payPerHour = 18.75;
+
+  // Stage definitions matching real project
   const stageConfig = [
-    { name: `Interior Stage A - ${stages.A} hours`, items: lists.INTERIOR_A },
-    { name: `Interior Stage B - ${stages.B} hours`, items: lists.INTERIOR_B },
-    { name: `Interior Stage C - ${stages.C} hours`, items: lists.INTERIOR_C },
-    { name: `Exterior Stage A - ${stages.A} hours`, items: lists.EXTERIOR_A },
-    { name: `Exterior Stage B - ${stages.B} hours`, items: lists.EXTERIOR_B },
-    { name: `Exterior Stage C - ${stages.C} hours`, items: lists.EXTERIOR_C },
+    { label: "Interior A", intExt: "Interior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_INTERIOR, stage: "A", stageGid: C.CUSTOM_FIELDS.STAGE_A, hours: stages.A, items: lists.INTERIOR_A },
+    { label: "Interior B", intExt: "Interior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_INTERIOR, stage: "B", stageGid: C.CUSTOM_FIELDS.STAGE_B, hours: stages.B, items: lists.INTERIOR_B },
+    { label: "Interior C", intExt: "Interior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_INTERIOR, stage: "C", stageGid: C.CUSTOM_FIELDS.STAGE_C, hours: stages.C, items: lists.INTERIOR_C },
+    { label: "Exterior A", intExt: "Exterior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_EXTERIOR, stage: "A", stageGid: C.CUSTOM_FIELDS.STAGE_A, hours: stages.A, items: lists.EXTERIOR_A },
+    { label: "Exterior B", intExt: "Exterior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_EXTERIOR, stage: "B", stageGid: C.CUSTOM_FIELDS.STAGE_B, hours: stages.B, items: lists.EXTERIOR_B },
+    { label: "Exterior C", intExt: "Exterior", intExtGid: C.CUSTOM_FIELDS.INT_EXT_EXTERIOR, stage: "C", stageGid: C.CUSTOM_FIELDS.STAGE_C, hours: stages.C, items: lists.EXTERIOR_C },
   ];
 
   for (const stage of stageConfig) {
-    // Create parent task
+    // Name format: "5 0' | (ATL), Exterior A"
+    const taskName = `${acronym} | ${clientShort}, ${stage.label}`;
+    const pay = stage.hours * payPerHour;
+
+    // Create parent task with all custom fields
     const parentTask = await asana.createTask({
-      name: stage.name,
+      name: taskName,
       projects: [checkoutProjectGid],
-      notes: `Charter: ${charterName}\nYacht: ${yachtName}`,
+      due_on: data.end_date,
+      notes: notesStr,
+      custom_fields: {
+        [C.CUSTOM_FIELDS.PRESCRIBED_TIME]: stage.hours,
+        [C.CUSTOM_FIELDS.CLEANING_STAGE]: stage.stageGid,
+        [C.CUSTOM_FIELDS.INT_EXT]: stage.intExtGid,
+        [C.CUSTOM_FIELDS.YACHT_NAME]: data.yacht_name_id,
+        [C.CUSTOM_FIELDS.CHARTER_NUMBER]: data.charter_number,
+        [C.CUSTOM_FIELDS.PAY]: pay,
+        [C.CUSTOM_FIELDS.YACHT_MODEL]: data.yacht_model_id || null,
+      },
     });
     const parentGid = parentTask.data.gid;
+
+    // Place in Section 6
+    if (hkSectionGid) {
+      await asana.addTaskToSection(hkSectionGid, parentGid);
+    }
 
     // Create subtasks under the parent
     for (const item of stage.items) {
       await asana.createSubtask(parentGid, { name: item });
-      // Small delay to respect rate limits
       await new Promise((r) => setTimeout(r, 150));
     }
 
-    logger.info(`Created ${stage.items.length} subtasks under "${stage.name}"`);
+    logger.info(`Created "${taskName}" with ${stage.items.length} subtasks`);
   }
 }
 
