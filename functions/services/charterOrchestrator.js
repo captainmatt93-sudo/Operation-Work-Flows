@@ -36,7 +36,8 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 3: Create tracking task in Asana ───────────────────
   log(3, "Creating tracking task in Asana");
-  const charterName = `${data.yacht_name} | ${data.client_name} | ${data.start_date} | ${data.end_date}`;
+  const charterName = data.charter_name || `${data.yacht_name} | ${data.client_name} | ${data.start_date} | ${data.end_date}`;
+  const yachtName = data.yacht_name?.trim();
   const trackingTask = await asana.createTask({
     name: charterName,
     projects: [C.BOARDS.CHARTER_INFO],
@@ -83,7 +84,7 @@ async function orchestrateNewCharter(payload) {
     await asana.addTaskToSection(sections[i].gid, trackingTaskGid);
   }
 
-  // ── Step 7: Add editor + update Charter Info + crew detail tasks ─
+  // ── Step 7: Add editor + update Charter Info ────────────────
   log(7, "Setting permissions and updating Charter Info");
   await asana.addProjectMember(charterProjectGid, C.EDITOR_MEMBER);
 
@@ -103,9 +104,9 @@ async function orchestrateNewCharter(payload) {
           [C.CUSTOM_FIELDS.NUMBER_OF_GUESTS]: data.number_guests,
           [C.CUSTOM_FIELDS.CHARTER_PRICE]: data.charter_price,
           [C.CUSTOM_FIELDS.CONTACT_EMAIL]: data.contact_email,
-          [C.CUSTOM_FIELDS.ACCOUNT_NAME]: data.account_name || data.client_name,
-          [C.CUSTOM_FIELDS.CLIENT_NAME]: data.client_name,
-          [C.CUSTOM_FIELDS.BOARDING_TIME]: data.boarding_time,
+          [C.CUSTOM_FIELDS.ACCOUNT_NAME]: data.contact_name || data.client_name,
+          [C.CUSTOM_FIELDS.CLIENT_NAME]: data.contact_name || data.client_name,
+          [C.CUSTOM_FIELDS.BOARDING_TIME]: data.boarding_time_gid || null,
           [C.CUSTOM_FIELDS.START_DAY]: data.start_day_id,
           [C.CUSTOM_FIELDS.END_DAY]: data.end_day_id,
         },
@@ -145,7 +146,6 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 9-10: Checkout project duplication + bridging task ─
   log(9, "Duplicating checkout template");
-  const yachtName = data.yacht_name?.trim();
   const checkoutTemplateGid = C.CHECKOUT_TEMPLATES[yachtName]
     || C.CHECKOUT_TEMPLATES["default"];
 
@@ -280,15 +280,15 @@ async function createInOutSchedule(data, charterProjectGid) {
   });
 
   // Sort DEPARTURE into correct day-of-week section
-  const startDay = data.start_day?.trim();
-  if (startDay && C.DAY_SECTIONS[startDay]) {
-    await asana.addTaskToSection(C.DAY_SECTIONS[startDay], depTask.data.gid);
+  const startDayName = data.start_day_name;
+  if (startDayName && C.DAY_SECTIONS[startDayName]) {
+    await asana.addTaskToSection(C.DAY_SECTIONS[startDayName], depTask.data.gid);
   }
 
   // Sort ARRIVAL into correct day-of-week section
-  const endDay = data.end_day?.trim();
-  if (endDay && C.DAY_SECTIONS[endDay]) {
-    await asana.addTaskToSection(C.DAY_SECTIONS[endDay], arrTask.data.gid);
+  const endDayName = data.end_day_name;
+  if (endDayName && C.DAY_SECTIONS[endDayName]) {
+    await asana.addTaskToSection(C.DAY_SECTIONS[endDayName], arrTask.data.gid);
   }
 }
 
