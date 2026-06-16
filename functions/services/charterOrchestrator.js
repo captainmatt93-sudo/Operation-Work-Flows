@@ -158,6 +158,25 @@ async function orchestrateNewCharter(payload) {
   const checkoutProjectGid = checkoutProject.gid || checkoutProject.new_project?.gid;
   log(10, `Checkout project created: ${checkoutProjectGid}`);
 
+  // Ensure all custom fields are attached to the checkout project
+  // (template may not have maintenance/housekeeping fields)
+  log("10b", "Attaching custom fields to checkout project");
+  await asana.ensureProjectCustomFields(checkoutProjectGid, [
+    C.CUSTOM_FIELDS.PRIORITY,
+    C.CUSTOM_FIELDS.DEPARTMENT,
+    C.CUSTOM_FIELDS.MAINT_TYPE,
+    C.CUSTOM_FIELDS.MAINT_HOURS,
+    C.CUSTOM_FIELDS.MAINT_MINUTES,
+    C.CUSTOM_FIELDS.TOTAL_TIME,
+    C.CUSTOM_FIELDS.YACHT_NAME,
+    C.CUSTOM_FIELDS.CHARTER_NUMBER,
+    C.CUSTOM_FIELDS.PRESCRIBED_TIME,
+    C.CUSTOM_FIELDS.CLEANING_STAGE,
+    C.CUSTOM_FIELDS.INT_EXT,
+    C.CUSTOM_FIELDS.YACHT_MODEL,
+    C.CUSTOM_FIELDS.PAY,
+  ]);
+
   // Create bridging task linked to both projects (notes format matches real project)
   const bridgingTask = await asana.createTask({
     name: `Check-Out | Check-In, ${charterName}`,

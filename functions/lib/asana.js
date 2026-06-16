@@ -131,6 +131,30 @@ async function addTaskToSection(sectionGid, taskGid) {
   });
 }
 
+async function addCustomFieldToProject(projectGid, customFieldGid) {
+  return asanaRequest("POST", `/projects/${projectGid}/addCustomFieldSetting`, {
+    data: { custom_field: customFieldGid },
+  });
+}
+
+/**
+ * Ensure a set of custom fields are attached to a project.
+ * Silently skips fields that are already attached.
+ */
+async function ensureProjectCustomFields(projectGid, fieldGids) {
+  for (const gid of fieldGids) {
+    try {
+      await addCustomFieldToProject(projectGid, gid);
+    } catch (err) {
+      // 400 = already exists on project, that's fine
+      if (!err.message.includes("already")) {
+        // Log but don't fail
+        console.warn(`Could not add custom field ${gid} to project: ${err.message}`);
+      }
+    }
+  }
+}
+
 // --- Search ---
 
 async function searchTasks(params) {
@@ -187,4 +211,6 @@ module.exports = {
   addTaskToProject,
   removeTaskFromProject,
   batchCreateTasks,
+  addCustomFieldToProject,
+  ensureProjectCustomFields,
 };
