@@ -5,6 +5,7 @@
 const asana = require("../lib/asana");
 const db = require("../lib/firestore");
 const C = require("../config/constants");
+const M = require("../config/maintenance");
 const { logger } = require("firebase-functions/v2");
 
 /**
@@ -171,19 +172,11 @@ async function orchestrateNewCharter(payload) {
 
   // ── Step 12: Create maintenance tasks ───────────────────────
   log(12, "Creating maintenance tasks");
-  const maintenanceProjectGid = C.MAINTENANCE_PROJECTS[yachtName];
-  if (maintenanceProjectGid) {
-    // TODO: Fetch standard_jobs from Firestore and create tasks
-    // For now, this uses the constants. We'll expand with Firestore in Phase 2.
-    log(12, `Maintenance project for ${yachtName}: ${maintenanceProjectGid}`);
-  } else {
-    logger.warn(`No maintenance project found for yacht: ${yachtName}`);
-  }
+  await createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data);
 
   // ── Step 13: Create housekeeping checklists ─────────────────
   log(13, "Creating housekeeping checklists");
-  // TODO: Fetch housekeeping_lists from Firestore and create subtasks
-  // This will be populated during the Firestore seeding phase.
+  await createHousekeepingChecklists(yachtName, checkoutProjectGid, charterName, data);
 
   // ── Step 14: IN/OUT Schedule ────────────────────────────────
   log(14, "Updating IN/OUT Schedule");
@@ -342,6 +335,95 @@ async function detectBackToBack(data, currentProjectGid, charterName) {
       projects: [currentProjectGid],
       notes: `Next charter: ${closestNext.name}\nGap: ${closestNextDays} day(s)`,
     });
+  }
+}
+
+/**
+ * Step 12: Create maintenance tasks in the yacht's existing maintenance project.
+ * Also links them into the checkout project.
+ */
+async function createMaintenanceTasks(yachtName, checkoutProjectGid, charterName, data) {
+  const yachtConfig = M.YACHT_MAINTENANCE[yachtName];
+  if (!yachtConfig) {
+    logger.warn(`No maintenance config for yacht: ${yachtName}`);
+    return;
+  }
+
+  const { project: maintProjectGid, jobs, charterSection } = yachtConfig;
+  logger.info(`Creating ${jobs.length} maintenance jobs in project ${maintProjectGid}`);
+
+  // Get the sections of the maintenance project
+  const maintSections = await asana.getProjectSections(maintProjectGid);
+  // Section[1] is typically where new tasks go
+  const targetSectionGid = maintSections.length > 1 ? maintSections[1].gid : maintSections[0].gid;
+
+  for (const jobName of jobs) {
+    const task = await asana.createTask({
+      name: `${jobName} - ${charterName}`,
+      projects: [maintProjectGid],
+    });
+    // Also add to the checkout project so crews see it there
+    await asana.addTaskToProject(task.data.gid, checkoutProjectGid);
+    await asana.addTaskToSection(targetSectionGid, task.data.gid);
+  }
+
+  // Update the yacht schedule board if we have a charter section
+  if (charterSection) {
+    await asana.createTask({
+      name: charterName,
+      projects: [C.BOARDS.YACHT_SCHEDULE],
+      start_on: data.start_date,
+      due_on: data.end_date,
+      custom_fields: {
+        [C.CUSTOM_FIELDS.CHARTER_NUMBER]: data.charter_number,
+      },
+    });
+  }
+}
+
+/**
+ * Step 13: Create housekeeping checklists with stage-based parent tasks
+ * and subtask checklists under each.
+ */
+async function createHousekeepingChecklists(yachtName, checkoutProjectGid, charterName, data) {
+  const stages = M.YACHT_STAGES[yachtName];
+  if (!stages) {
+    logger.warn(`No housekeeping stages for yacht: ${yachtName}`);
+    return;
+  }
+
+  const lists = M.HOUSEKEEPING_LISTS;
+
+  // Get checkout project sections
+  const sections = await asana.getProjectSections(checkoutProjectGid);
+
+  // Stage definitions: parent task name → { hours, checklist }
+  const stageConfig = [
+    { name: `Interior Stage A - ${stages.A} hours`, items: lists.INTERIOR_A },
+    { name: `Interior Stage B - ${stages.B} hours`, items: lists.INTERIOR_B },
+    { name: `Interior Stage C - ${stages.C} hours`, items: lists.INTERIOR_C },
+    { name: `Exterior Stage A - ${stages.A} hours`, items: lists.EXTERIOR_A },
+    { name: `Exterior Stage B - ${stages.B} hours`, items: lists.EXTERIOR_B },
+    { name: `Exterior Stage C - ${stages.C} hours`, items: lists.EXTERIOR_C },
+  ];
+
+  for (const stage of stageConfig) {
+    // Create parent task
+    const parentTask = await asana.createTask({
+      name: stage.name,
+      projects: [checkoutProjectGid],
+      notes: `Charter: ${charterName}\nYacht: ${yachtName}`,
+    });
+    const parentGid = parentTask.data.gid;
+
+    // Create subtasks under the parent
+    for (const item of stage.items) {
+      await asana.createSubtask(parentGid, { name: item });
+      // Small delay to respect rate limits
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    logger.info(`Created ${stage.items.length} subtasks under "${stage.name}"`);
   }
 }
 
