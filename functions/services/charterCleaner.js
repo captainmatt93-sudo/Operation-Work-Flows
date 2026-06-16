@@ -60,6 +60,44 @@ async function deleteCharter(payload) {
     logger.warn(`Error deleting checkout project: ${err.message}`);
   }
 
+  // ── Step 3b: Delete tracking task from Charter Info board ───
+  if (state.trackingTaskGid) {
+    log("3b", "Deleting tracking task");
+    try {
+      await asana.deleteTask(state.trackingTaskGid);
+    } catch (err) {
+      logger.warn(`Error deleting tracking task: ${err.message}`);
+    }
+  }
+
+  // Also search Charter Info board by charter number for any remaining tasks
+  const charterInfoTasks = await asana.searchTasks({
+    "projects.any": C.BOARDS.CHARTER_INFO,
+    [`custom_fields.${C.CUSTOM_FIELDS.CHARTER_NUMBER}.value`]: charterNumber,
+    "completed": false,
+  });
+  for (const t of charterInfoTasks) {
+    try { await asana.deleteTask(t.gid); } catch (e) { /* task may already be gone */ }
+  }
+
+  // ── Step 3c: Clean up Arrivals + Departures boards ─────────
+  const arrivalTasks = await asana.searchTasks({
+    "projects.any": C.BOARDS.ARRIVALS,
+    [`custom_fields.${C.CUSTOM_FIELDS.CHARTER_NUMBER}.value`]: charterNumber,
+    "completed": false,
+  });
+  for (const t of arrivalTasks) {
+    try { await asana.deleteTask(t.gid); } catch (e) { /* */ }
+  }
+  const departureTasks = await asana.searchTasks({
+    "projects.any": C.BOARDS.DEPARTURES,
+    [`custom_fields.${C.CUSTOM_FIELDS.CHARTER_NUMBER}.value`]: charterNumber,
+    "completed": false,
+  });
+  for (const t of departureTasks) {
+    try { await asana.deleteTask(t.gid); } catch (e) { /* */ }
+  }
+
   // ── Step 4: Clean up master boards ──────────────────────────
   log(4, "Cleaning up master boards");
 
