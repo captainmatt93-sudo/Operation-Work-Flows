@@ -37,7 +37,9 @@ async function orchestrateNewCharter(payload) {
   // ── Step 3: Create tracking task in Asana ───────────────────
   log(3, "Creating tracking task in Asana");
   const charterName = data.charter_name || `${data.yacht_name} | ${data.client_name} | ${data.start_date} | ${data.end_date}`;
-  const yachtName = data.yacht_name?.trim();
+  const rawYachtName = data.yacht_name?.trim();
+  const yachtName = C.YACHT_ALIASES[rawYachtName] || rawYachtName;
+  if (yachtName !== rawYachtName) log(3, `Yacht alias: "${rawYachtName}" → "${yachtName}"`);
   const trackingTask = await asana.createTask({
     name: charterName,
     projects: [C.BOARDS.CHARTER_INFO],

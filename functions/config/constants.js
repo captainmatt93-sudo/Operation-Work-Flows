@@ -220,10 +220,16 @@ const YACHT_ACRONYMS = {
   "The Drake":           "TD",
   "Southern Cross":      "SC",
   "Way Maker":           "WM",
-  "Miles Away II":       "MA2",
+  "Miles Away":          "MA2",
   "Decent Effort":       "DE",
   "Electrified":         "EL",
   "No Regrets":          "NR",
+};
+
+// --- External → Internal Yacht Name Aliases ---
+// Left = name sent by the external system, Right = key used in our config
+const YACHT_ALIASES = {
+  "Miles Away II": "Miles Away",
 };
 
 // --- Maintenance Crew Assignments ---
@@ -256,6 +262,7 @@ module.exports = {
   CHEFS,
   BROKERS,
   YACHT_ACRONYMS,
+  YACHT_ALIASES,
   MAINT_CREW,
   FIXED_MAINT_TASKS,
 };

@@ -45,7 +45,7 @@ const YACHT_MAINTENANCE = {
   "The Drake":           { project: "1208391787698878", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Southern Cross":      { project: "1210331621233575", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Way Maker":           { project: "1210331621233578", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Miles Away II":       { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
+  "Miles Away":          { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Decent Effort":       { project: "1211811642616860", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
 };
 
@@ -79,7 +79,7 @@ const YACHT_STAGES = {
   "The Drake":           { A: 8, B: 4, C: 4 },
   "Southern Cross":      { A: 5, B: 2.5, C: 2.5 },
   "Way Maker":           { A: 5, B: 2.5, C: 2.5 },
-  "Miles Away II":       { A: 8, B: 4, C: 4 },
+  "Miles Away":          { A: 8, B: 4, C: 4 },
   "Decent Effort":       { A: 8, B: 4, C: 4 },
 };
 
