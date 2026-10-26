@@ -14,6 +14,157 @@ const BOARDS = {
   IN_OUT_SCHEDULE: "1201610202732732",
   LAUNDRY:         "1201534108078115",
   YACHT_SCHEDULE:  "1201533939042396",
+  CHECKOUT_MASTER: "1200203037114469",
+  CHECKOUT_MASTER_SECTION: "1200234987888190",
+  MECHANICAL_PROJECT: "1203946319141003",
+  HK_STAGE_PROJECT: "1200107251427520",
+  HK_YACHT_SCHEDULE: "1201533938937583",
+};
+
+// --- Start Day enum GIDs (on START_DAY custom field) ---
+const START_DAY_GIDS = {
+  "Monday":    "1201397001791582",
+  "Tuesday":   "1201397001794619",
+  "Wednesday": "1201397001795662",
+  "Thursday":  "1201397001796765",
+  "Friday":    "1201397001797806",
+  "Saturday":  "1201397001797961",
+  "Sunday":    "1201397001803121",
+};
+
+// --- End Day enum GIDs (on END_DAY custom field) ---
+const END_DAY_GIDS = {
+  "Monday":    "1201397057038401",
+  "Tuesday":   "1201397057039559",
+  "Wednesday": "1201397057042657",
+  "Thursday":  "1201397057046785",
+  "Friday":    "1201397057046823",
+  "Saturday":  "1201397057046851",
+  "Sunday":    "1201397057046871",
+};
+
+// --- Yacht Name Aliases (external webhook / HubSpot names → canonical config key) ---
+const YACHT_ALIASES = {
+  "Miles Away":          "Miles Away II",
+  "Let it Go":           "Let It Go",
+  "Busy Bs":             "Busy B's",
+  "Busy Bee's":          "Busy B's",
+  "5 0'Clock Somewhere": "5 O'Clock Somewhere",
+  "SeaGlass":            "Sea Glass",
+  "MoonStruck":          "Moonstruck",
+  "Out of Office":       "Out Of Office",
+};
+
+// --- Yacht Name enum GIDs (on YACHT_NAME custom field) ---
+const YACHT_NAME_GIDS = {
+  "Moonstruck":          "1200083904460769",
+  "After Glow":          "1200083904460773",
+  "Let It Go":           "1200083904462828",
+  "Let it Go":           "1200083904462828",
+  "Endless Summer":      "1200083904462829",
+  "Sail La Vie":         "1201397077447620",
+  "Osprey":              "1200083904463924",
+  "No Regrets":          "1200083904464951",
+  "Secret Oasis":        "1200083904464957",
+  "Summer Breez":        "1200083904464958",
+  "Home Sweet Home":     "1200113204165221",
+  "Sol Liv":             "1200147320573158",
+  "Home Again":          "1201359827953250",
+  "Job Site":            "1201359827957387",
+  "Auto Pirate":         "1203238000583932",
+  "5 O'Clock Somewhere": "1203867689803137",
+  "5 0'Clock Somewhere": "1203867689803137",
+  "Home Away":           "1205533252285251",
+  "Busy B's":            "1205952043988690",
+  "Busy Bs":             "1205952043988690",
+  "Busy Bee's":          "1205952043988690",
+  "Treasure Hunter":     "1206131289977023",
+  "Sea Glass":           "1207483377505420",
+  "SeaGlass":            "1207483377505420",
+  "Big Kid Island":      "1207483377505421",
+  "The Drake":           "1208400762671018",
+  "Way Maker":           "1210332748843384",
+  "Southern Cross":      "1210332748843385",
+  "Miles Away II":       "1211811642616857",
+  "Miles Away":          "1211811642616857",
+  "Decent Effort":       "1211811642616858",
+};
+
+/**
+ * Resolve any incoming yacht name (alias or casing variation) to its canonical config key.
+ * Returns the original trimmed string if no alias or case-insensitive match is found.
+ */
+function resolveYachtName(rawName) {
+  if (!rawName || typeof rawName !== "string") return rawName;
+  const trimmed = rawName.trim();
+  if (YACHT_ALIASES[trimmed]) return YACHT_ALIASES[trimmed];
+  if (YACHT_NAME_GIDS[trimmed]) return trimmed;
+
+  const lower = trimmed.toLowerCase();
+  for (const [alias, canonical] of Object.entries(YACHT_ALIASES)) {
+    if (alias.toLowerCase() === lower) return canonical;
+  }
+  for (const key of Object.keys(YACHT_NAME_GIDS)) {
+    if (key.toLowerCase() === lower) return YACHT_ALIASES[key] || key;
+  }
+  return trimmed;
+}
+
+/**
+ * Return all known name variants for a yacht (e.g. ["Miles Away II", "Miles Away"])
+ * so Firestore queries on provisioning_state match regardless of which variant was saved.
+ */
+function getYachtNameVariants(rawName) {
+  if (!rawName || typeof rawName !== "string") return [];
+  const trimmed = rawName.trim();
+  const canonical = resolveYachtName(trimmed);
+  const variants = new Set([trimmed, canonical]);
+  for (const [alias, target] of Object.entries(YACHT_ALIASES)) {
+    if (target === canonical) variants.add(alias);
+  }
+  return Array.from(variants);
+}
+
+// --- HK Stage Sections (on HK_STAGE_PROJECT) ---
+const HK_STAGE_SECTIONS = {
+  A: "1200107251427523",
+  B: "1200107251427526",
+  C: "1200107251427529",
+};
+
+// --- HK Yacht Schedule Sections (on HK_YACHT_SCHEDULE — by yacht name) ---
+const HK_YACHT_SECTIONS = {
+  "After Glow":          "1201533939042388",
+  "Moonstruck":          "1201533938937593",
+  "Let It Go":           "1201533938937591",
+  "Let it Go":           "1201533938937591",
+  "Endless Summer":      "1201533938937594",
+  "No Regrets":          "1201533938937600",
+  "Secret Oasis":        "1201533938937603",
+  "Sail La Vie":         "1201533938937599",
+  "Summer Breez":        "1201533938937606",
+  "Osprey":              "1201533938937602",
+  "Home Sweet Home":     "1201533938937604",
+  "Sol Liv":             "1201533938937605",
+  "Home Again":          "1201576342214029",
+  "Job Site":            "1202117159894708",
+  "Auto Pirate":         "1203237651929869",
+  "5 O'Clock Somewhere": "1203857164241995",
+  "5 0'Clock Somewhere": "1203857164241995",
+  "Home Away":           "1205521963054611",
+  "Busy B's":            "1205944054535997",
+  "Busy Bs":             "1205944054535997",
+  "Busy Bee's":          "1205944054535997",
+  "Treasure Hunter":     "1206122229777619",
+  "Sea Glass":           "1207406628662226",
+  "SeaGlass":            "1207406628662226",
+  "Big Kid Island":      "1207472672951874",
+  "The Drake":           "1208400596928935",
+  "Southern Cross":      "1210329355167190",
+  "Way Maker":           "1210329355167189",
+  "Miles Away II":       "1211811760681495",
+  "Miles Away":          "1211811760681495",
+  "Decent Effort":       "1211811761922882",
 };
 
 // --- Custom Field GIDs ---
@@ -35,8 +186,8 @@ const CUSTOM_FIELDS = {
   START_DAY:           "1201397001788498",
   CONTACT_EMAIL:       "1201397047055605",
   END_DAY:             "1201397057037367",
-  CONTACT_PHONE:       "1200083909657800",
-  NUMBER_OF_NIGHTS:    "1200083906862045",
+  CONTACT_PHONE:       "1201396992589529",
+  NUMBER_OF_NIGHTS:    "1200084005855741",
   // IN/OUT fields
   IN_OUT_TYPE:         "1201535750381848",
   IN_OUT_DEPARTURE:    "1201535750381851",
@@ -67,6 +218,10 @@ const CUSTOM_FIELDS = {
   MAINT_HOURS:         "1200028344003991",
   MAINT_MINUTES:       "1200028344003993",
   TOTAL_TIME:          "1209265022897877",
+  // Maintenance-specific fields (different GIDs on maint projects)
+  MAINT_PRIORITY:        "1199962527187402",
+  MAINT_PRIORITY_HIGH:   "1199962527187403",
+  MAINT_DEPARTMENT:      "1199963408496825",
   // Crew detail fields
   CREW_TYPE:           "1208796958001761",
   CREW_TYPE_CAPTAIN:   "1208796958001764",
@@ -76,6 +231,17 @@ const CUSTOM_FIELDS = {
   DIFFERENCE:          "1208594903802258",
   CONTACT_ID:          "1201313097523184",
   ACCOUNT_ID:          "1201313142033565",
+  // Schedule task fields (Check-In | Check-Out)
+  SCHEDULE_TYPE:           "1201099825060511",
+  SCHEDULE_TYPE_STANDARD:  "1201099825060518",
+  SCHEDULE_TYPE_NOON:      "1201099825060525",
+  SCHEDULE_TYPE_MORNING:   "1201099825060525",
+  SCHEDULE_TYPE_SLEEP:     "1201099825060529",
+  // Boat Type enum values
+  BOAT_TYPE_VESSEL_PREP:   "1201051657173400",
+  BOAT_TYPE_BRIEFING:      "1200671165516783",
+  BOAT_TYPE_DEBRIEF:       "1200671165516794",
+  BOAT_TYPE_SLEEP_ABOARD:  "1201062910947860",
 };
 
 // --- Charter Project Templates (Flow 2) ---
@@ -87,24 +253,86 @@ const CHARTER_TEMPLATES = {
   "Yacht & Crew":          { gid: "1203627293433267", color: "light-yellow" },
 };
 
-// --- Checkout Project Templates (Flow 3) ---
+// --- Charter Type name → Asana enum option GID (CUSTOM_FIELDS.CHARTER_TYPE) ---
+const CHARTER_TYPE_IDS = {
+  "All Inclusive Crewed":                           "1200083909658839",
+  "Bareboat":                                       "1200083909657801",
+  "Bareboat Crewed":                                "1200083909657805",
+  "Yacht & Captain":                                "1200083909658831",
+  "Yacht & Chef":                                   "1200083909658836",
+  "Owner":                                          "1200111825796823",
+  "Day Sail - Full Day":                            "1209078999268728",
+  "Day Sail - Half Day":                            "1209078999268729",
+  "STT Water Taxi - Pick up Round Trip":            "1209078999268730",
+  "STT Water Taxi - Pick up One Way Trip":          "1209078999268731",
+  "EIS Airport - Pick Up Round Trip":               "1209078999268732",
+  "EIS Airport - Pick Up One Way Trip":             "1209078999268733",
+  "JOIN IN - STT Water Taxi - Pick up Round Trip":  "1209079041151484",
+  "JOIN IN - STT Water Taxi - Pick up One Way Trip":"1209079041151485",
+  "JOIN IN - EIS Airport - Pick Up Round Trip":     "1209079041151486",
+  "JOIN IN - EIS Airport - Pick Up One Way Trip":   "1209079041151487",
+  "Day Trip - 8 Hours":                            "1209079041151488",
+  "Half Day Trip - 4 Hours":                       "1209079041151489",
+  "Night Trip - 3 hours":                          "1209079041151490",
+  "Peter Island - Pick Trips":                     "1214026149456039",
+};
+
+// --- Sales Agent name → Asana enum option GID (CUSTOM_FIELDS.SALES_AGENT) ---
+const SALES_AGENT_IDS = {
+  "Shawn Caraker Paulus": "1200083837525031",
+  "Danyielle Roth":       "1200083837525032",
+  "Chris Beavis":         "1200083837525033",
+  "Clare Goodall":        "1200083837525034",
+  "Peter Jones":          "1200111861308727",
+  "Sarah Jones":          "1201954600773869",
+  "Jenna Post":           "1208456224894347",
+  "David Schlup":         "1208456224894348",
+  "Oscar Mendoza":        "1211837770393074",
+};
+
+// --- Boarding Time display → Asana enum option GID (CUSTOM_FIELDS.BOARDING_TIME) ---
+// Valid Asana enum values (verified 2026-07-03): "12:00 PM", "05:00 PM"
+const BOARDING_TIME_IDS = {
+  // Canonical values (exact Asana enum names)
+  "12:00 PM": "1200113358975918",
+  "05:00 PM": "1200113358976962",
+  // Common aliases
+  "5:00 PM":  "1200113358976962",   // same as 05:00 PM
+  "Noon":     "1200113358975918",   // same as 12:00 PM
+};
+
+// --- Yacht Model name → Asana enum option GID (CUSTOM_FIELDS.YACHT_MODEL) ---
+const YACHT_MODEL_IDS = {
+  "VOYAGE 480":      "1200070937070497",
+  "VOYAGE 480e":     "1201396780154466",
+  "VOYAGE 500":      "1200070937070498",
+  "VOYAGE 510":      "1205550579609036",
+  "VOYAGE 510e":     "1205550579609037",
+  "VOYAGE 520":      "1200070937070499",
+  "VOYAGE 580":      "1200070937070500",
+  "VOYAGE 590e":     "1200070937070501",
+  "VOYAGE 590":      "1201396780156555",
+  "VOYAGE 650":      "1200070937070502",
+  "FORTY KNOTS 380": "1210354137579975",
+};
+
+// --- Checkout Project Templates (by model) ---
 const CHECKOUT_TEMPLATES = {
-  "Endless Summer": "1200147531859477",
-  "Moonstruck":     "1200147531859477",
-  "Destiny":        "1200240983171131",
-  "Let It Go":      "1200240983171131",
-  "Legacy":         "1200240987644912",
-  "Libre":          "1200240987644912",
-  "Bareboat":       "1200242931026551",
-  "default":        "1210380647223348",
+  "VOYAGE 480":  "1200147531859477",
+  "VOYAGE 510":  "1210380647223348",
+  "VOYAGE 520":  "1200240983171131",
+  "VOYAGE 580":  "1200240987644912",
+  "VOYAGE 590":  "1200242931026551",
+  "VOYAGE 590e": "1200242931026551",
+  "default":     "1210380647223348",
 };
 
 // --- Per-Yacht Maintenance Project GIDs (Flow 5) ---
 const MAINTENANCE_PROJECTS = {
   "Endless Summer": "930228245617935",
   "Moonstruck":     "691587298515988",
-  "Destiny":        "717709282577739",
   "Let It Go":      "732995064675562",
+  "Let it Go":      "732995064675562",
   "Mahi Mahi":      "120612499680437",
   "Azulia":         "120612499680437",
   "Legacy":         "123856243164731",
@@ -174,62 +402,105 @@ const BROKERS = {
   "Danyielle Roth":        "danyielle@voyagecharters.com",
   "Chris Beavis":          "chris@voyagecharters.com",
   "Sarah Jones":           "sarah@voyagecharters.com",
+  "Jenna Post":            "jenna@voyagecharters.com",
+};
+
+// --- Sales Agent Name → Asana GID ---
+const SALES_AGENTS = {
+  "Shawn Caraker Paulus": "1200083837525031",
+  "Danyielle Roth": "1200083837525032",
+  "Chris Beavis": "1200083837525033",
+  "Clare Goodall": "1200083837525034",
+  "Peter Jones": "1200111861308727",
+  "Sarah Jones": "1201954600773869",
+  "Jenna Post": "1208456224894347",
+  "David Schlup": "1208456224894348",
+  "Oscar Mendoza": "1211837770393074"
+};
+
+// --- Yacht Model Name → Asana GID ---
+const YACHT_MODELS = {
+  "VOYAGE 480": "1200070937070497",
+  "VOYAGE 480e": "1201396780154466",
+  "VOYAGE 500": "1200070937070498",
+  "VOYAGE 510": "1205550579609036",
+  "VOYAGE 510e": "1205550579609037",
+  "VOYAGE 520": "1200070937070499",
+  "VOYAGE 580": "1200070937070500",
+  "VOYAGE 590e": "1200070937070501",
+  "VOYAGE 590": "1201396780156555",
+  "VOYAGE 650": "1200070937070502",
+  "FORTY KNOTS 380": "1210354137579975"
+};
+
+// --- Boat Name → Model Name (auto-resolve model from yacht name) ---
+const BOAT_TO_MODEL = {
+  "Endless Summer":      "VOYAGE 480",
+  "Moonstruck":          "VOYAGE 480",
+  "Let It Go":           "VOYAGE 480",
+  "Let it Go":           "VOYAGE 480",
+  "After Glow":          "VOYAGE 480",
+  "Sail La Vie":         "VOYAGE 480",
+  "Southern Cross":      "VOYAGE 510",
+  "Way Maker":           "VOYAGE 510",
+  "Osprey":              "VOYAGE 520",
+  "No Regrets":          "VOYAGE 520",
+  "Secret Oasis":        "VOYAGE 580",
+  "Busy B's":            "VOYAGE 590",
+  "Busy Bs":             "VOYAGE 590",
+  "Busy Bee's":          "VOYAGE 590",
+  "Home Sweet Home":     "VOYAGE 590",
+  "Sol Liv":             "VOYAGE 590",
+  "Home Again":          "VOYAGE 590",
+  "Job Site":            "VOYAGE 590",
+  "Auto Pirate":         "VOYAGE 590",
+  "5 O'Clock Somewhere": "VOYAGE 590",
+  "5 0'Clock Somewhere": "VOYAGE 590",
+  "Home Away":           "VOYAGE 590",
+  "Treasure Hunter":     "VOYAGE 590",
+  "Sea Glass":           "VOYAGE 590",
+  "SeaGlass":            "VOYAGE 590",
+  "Big Kid Island":      "VOYAGE 590",
+  "The Drake":           "VOYAGE 590",
+  "Miles Away II":       "VOYAGE 590",
+  "Miles Away":          "VOYAGE 590",
+  "Decent Effort":       "VOYAGE 590",
+  "Summer Breez":        "VOYAGE 590e",
 };
 
 // --- Yacht Acronyms (Flow 3) ---
 const YACHT_ACRONYMS = {
   "Endless Summer":      "ES",
   "Moonstruck":          "MS",
-  "Destiny":             "DES",
   "Let It Go":           "LIG",
-  "Legacy":              "LEG",
-  "Libre":               "LIB",
+  "Let it Go":           "LIG",
   "Osprey":              "OSP",
   "Busy B's":            "BB",
-  "Island Spirit":       "IS",
-  "Wild Hearts":         "WH",
-  "Silverlining":        "SL",
-  "Flow Rider":          "FR",
-  "Miss Isla":           "MI",
-  "Kittyhawk":           "KH",
-  "Gia Sena":            "GS",
-  "Grace":               "GR",
-  "Adventure Us":        "AU",
-  "Wanderlust":          "WL",
-  "Victoria":            "VIC",
-  "Kokomo":              "KOK",
-  "Far Niente":          "FN",
-  "Relentless":          "REL",
-  "Gratitude":           "GRAT",
-  "Nauti Buoys":         "NB",
+  "Busy Bs":             "BB",
+  "Busy Bee's":          "BB",
   "After Glow":          "AG",
   "Secret Oasis":        "SO",
   "Summer Breez":        "SB",
   "Home Sweet Home":     "HSH",
-  "Sol Liv":             "SL2",
+  "Sol Liv":             "SL",
   "Sail La Vie":         "SLV",
   "Home Again":          "HA",
   "Job Site":            "JS",
-  "Windborne":           "WB",
   "Auto Pirate":         "AP",
   "5 O'Clock Somewhere": "5 0'",
-  "Home Away":           "HmA",
+  "5 0'Clock Somewhere": "5 0'",
+  "Home Away":           "HW",
   "Treasure Hunter":     "TH",
   "Sea Glass":           "SG",
+  "SeaGlass":            "SG",
   "Big Kid Island":      "BKI",
   "The Drake":           "TD",
   "Southern Cross":      "SC",
   "Way Maker":           "WM",
+  "Miles Away II":       "MA2",
   "Miles Away":          "MA2",
   "Decent Effort":       "DE",
-  "Electrified":         "EL",
   "No Regrets":          "NR",
-};
-
-// --- External → Internal Yacht Name Aliases ---
-// Left = name sent by the external system, Right = key used in our config
-const YACHT_ALIASES = {
-  "Miles Away II": "Miles Away",
 };
 
 // --- Maintenance Crew Assignments ---
@@ -239,30 +510,80 @@ const MAINT_CREW = {
 };
 
 // --- Fixed Maintenance Tasks (from real project) ---
-const FIXED_MAINT_TASKS = [
-  { name: "@Check/Run Port and Starboard Gensets",  assignee: "732999672531073", dept: "1199963408496827", hours: 1 },
-  { name: "@Wash Port and Stb engine rooms",         assignee: "732999672531073", dept: "1199963408496827", hours: 1.5 },
-  { name: "Clean Genset | Engine strainers",          assignee: "732999672531073", dept: "1199963408496827", hours: 0 },
-  { name: "@Port and Stb engine checks",              assignee: "732999672531073", dept: "1199963408496827", hours: 1 },
-  { name: "@System Check",                            assignee: null, dept: "1199963408496830", hours: 0 },  // assigned to Captain at runtime
-  { name: "@Rigging Check/Full lubrication job",      assignee: "130812572926108", dept: "1199963408496828", hours: 2 },
+// --- Fixed Maintenance Tasks: Dual Genset (7 tasks) ---
+const FIXED_MAINT_TASKS_DUAL = [
+  { name: "Service port genset",              dept: "1199963408496827", hours: 1.5 },
+  { name: "Service stb genset",               dept: "1199963408496827", hours: 1.5 },
+  { name: "Wash port and stb engine rooms",   dept: "1199963408496827", hours: 1.5 },
+  { name: "Clean Genset Engine strainers",     dept: "1199963408496827", hours: 0.5 },
+  { name: "Port and stb engine checks",       dept: "1199963408496827", hours: 1 },
+  { name: "Systems check",                    dept: "1199963408496830", hours: 1 },
+  { name: "Rigging check and lubrication",    dept: "1199963408496828", hours: 2 },
 ];
+
+// --- Fixed Maintenance Tasks: Single Genset (6 tasks) ---
+const FIXED_MAINT_TASKS_SINGLE = [
+  { name: "Service genset",                   dept: "1199963408496827", hours: 1.5 },
+  { name: "Wash port and stb engine rooms",   dept: "1199963408496827", hours: 1.5 },
+  { name: "Clean genset strainer",             dept: "1199963408496827", hours: 0.5 },
+  { name: "Check port and stb engines",       dept: "1199963408496827", hours: 1 },
+  { name: "Systems check",                    dept: "1199963408496830", hours: 1 },
+  { name: "Rigging check and lubrication",    dept: "1199963408496828", hours: 2 },
+];
+
+// --- Genset Type Resolution ---
+const SINGLE_GENSET_MODELS = new Set([
+  "VOYAGE 480", "VOYAGE 480e", "VOYAGE 510", "VOYAGE 510e", "VOYAGE 520",
+]);
+const SINGLE_GENSET_BOATS = new Set([
+  "The Drake", "Miles Away II", "Miles Away", "Decent Effort",
+]);
+
+function isSingleGenset(yachtName, modelName) {
+  const resolved = resolveYachtName(yachtName);
+  if (SINGLE_GENSET_BOATS.has(yachtName) || SINGLE_GENSET_BOATS.has(resolved)) return true;
+  if (modelName && SINGLE_GENSET_MODELS.has(modelName)) return true;
+  return false;
+}
+
+function getFixedMaintTasks(yachtName, modelName) {
+  return isSingleGenset(yachtName, modelName)
+    ? FIXED_MAINT_TASKS_SINGLE
+    : FIXED_MAINT_TASKS_DUAL;
+}
 
 module.exports = {
   ASANA_WORKSPACE,
   CHECKOUT_TEAM,
   EDITOR_MEMBER,
   BOARDS,
+  START_DAY_GIDS,
+  END_DAY_GIDS,
+  YACHT_ALIASES,
+  YACHT_NAME_GIDS,
+  resolveYachtName,
+  getYachtNameVariants,
   CUSTOM_FIELDS,
   CHARTER_TEMPLATES,
+  CHARTER_TYPE_IDS,
+  SALES_AGENT_IDS,
+  BOARDING_TIME_IDS,
+  YACHT_MODEL_IDS,
   CHECKOUT_TEMPLATES,
   MAINTENANCE_PROJECTS,
   DAY_SECTIONS,
+  HK_STAGE_SECTIONS,
+  HK_YACHT_SECTIONS,
   CAPTAINS,
   CHEFS,
   BROKERS,
+  SALES_AGENTS,
+  YACHT_MODELS,
+  BOAT_TO_MODEL,
   YACHT_ACRONYMS,
-  YACHT_ALIASES,
   MAINT_CREW,
-  FIXED_MAINT_TASKS,
+  FIXED_MAINT_TASKS_DUAL,
+  FIXED_MAINT_TASKS_SINGLE,
+  getFixedMaintTasks,
+  isSingleGenset,
 };

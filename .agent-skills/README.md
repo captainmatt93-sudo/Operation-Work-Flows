@@ -9,82 +9,75 @@ Welcome, AI Agent. Before executing tasks on the **Operation-Work-Flows** (Chart
 ## Core Skills Index
 
 ### Flows (Business Logic)
-1. **[Charter Orchestration (Create Flow)](skill-charter-orchestration.md)** - The 15-step `orchestrateNewCharter()` pipeline: tracking task, template duplication, checkout project, Firestore state, IN/OUT board, back-to-back detection.
-2. **[Charter Cleanup (Delete / Edit Flow)](skill-charter-cleanup.md)** - `deleteCharter()`, legacy bridging-task fallback, master board cleanup, and the Edit -> HubSpot re-create callback.
-3. **[Maintenance & Housekeeping Provisioning](skill-maintenance-housekeeping.md)** - Steps 12-13: fixed maintenance tasks, `@Standard Jobs`, A/B/C interior/exterior checklists, pay calc, and how to add a new yacht.
+1. **[Charter Orchestration (Create Flow)](skill-charter-orchestration.md)** - The parallel 3-group (A->B->C) `orchestrateNewCharter()` pipeline: tracking task, template duplication, checkout project, Firestore state, IN/OUT board, back-to-back detection.
+2. **[Charter Cleanup (Delete / Edit Flow)](skill-charter-cleanup.md)** - `deleteCharter()`, PRE-section unlinking, POST-section global deletion, re-bridging adjacent charters, and the Edit -> recreate + Maint + HK pipeline.
+3. **[Maintenance & Housekeeping Provisioning](skill-maintenance-housekeeping.md)** - `maintenanceService.js` (`executeMaintenanceFlow`) and `housekeepingService.js` (`executeHousekeepingFlow`), plus bidirectional PRE/POST bridging (`7a` / `7b`).
 
 ### Data & Integrations
-4. **[Payload Contract & normalizePayload()](skill-payload-contract.md)** - Inbound Power Automate payload shape, quirks (`'""'` crew, GID day fields, `boarding_time` object), and field aliases.
-5. **[Asana API Wrapper](skill-asana-integration.md)** - `lib/asana.js` functions, project duplication job polling, search params, section-index placement, and rate limiting.
-6. **[Constants & GID Reference](skill-constants-and-gids.md)** - Every map in `config/constants.js`, which maps are keyed by yacht name, and which are stale/unused.
-7. **[Firestore State](skill-firestore-state.md)** - `provisioning_state` collection, doc ID format, what is saved and when, and unused config readers.
+4. **[Payload Contract & normalizePayload()](skill-payload-contract.md)** - Inbound payload shape, enum resolution (`START_DAY_GIDS`, `END_DAY_GIDS`, `YACHT_NAME_GIDS`, `BOAT_TO_MODEL`), and `resolveYachtName()` alias resolution.
+5. **[Asana API Wrapper](skill-asana-integration.md)** - `lib/asana.js` write concurrency semaphore (12 concurrent writes), 429 + 5xx retry backoff, batch subtask creation, and custom-field attachment.
+6. **[Constants & GID Reference](skill-constants-and-gids.md)** - Every map in `config/constants.js`, `YACHT_ALIASES`, `resolveYachtName`, and `getYachtNameVariants`.
+7. **[Firestore State](skill-firestore-state.md)** - Named Firestore database `"powerautomate"`, `provisioning_state`, `charter_audit_log`, `operation_locks`, and `pending_operations`.
 
 ### Operations & Quality
 8. **[Deployment Workflow](skill-deployment-workflow.md)** - Firebase project `paynow-3f9dc`, codebase `charter-orchestrator`, env vars (`ASANA_PAT`, `WEBHOOK_API_KEY`), and safe deploy commands.
 9. **[Testing Workflow](skill-testing-workflow.md)** - Create -> verify in Asana -> Delete cycle, far-future test dates, `TEST-` charter numbers, emulator caveats.
-10. **[Known Issues & Gotchas](skill-known-issues.md)** - Verified bugs, data collisions, and silent-failure traps in the current code. **Read before editing.**
+10. **[Known Issues & Gotchas](skill-known-issues.md)** - Resolved issues and remaining caveats. **Read before editing.**
 
 ---
 
 ## Critical Rules (Apply to Every Task)
 
-1. **This is Firebase project `paynow-3f9dc` (VOYAGE Operations).** It is NOT the Express Portal project. Never deploy one into the other.
+1. **This is Firebase project `paynow-3f9dc` (VOYAGE Operations).** All Firestore state lives in the named database **`"powerautomate"`** (`getFirestore("powerautomate")`), NOT `(default)`.
 2. **Asana is production.** The emulator still calls the real Asana API. Only test with far-future dates and `TEST-` charter numbers, and always run the Delete step afterwards.
-3. **Never hardcode secrets.** `ASANA_PAT` and `WEBHOOK_API_KEY` come from `process.env`. Do not paste the API key into skill files, commits, or test scripts.
+3. **Never hardcode secrets.** `ASANA_PAT` and `WEBHOOK_API_KEY` come from `process.env` (`functions/.env`, which is gitignored). Do not paste the API key into skill files, commits, or test scripts.
 4. **Never save `undefined` to Firestore** - the Admin SDK throws. Coerce optional fields with `|| null`.
-5. **Never pass `undefined` into `asana.searchTasks()`** - `URLSearchParams` serializes it as the literal string `"undefined"` and the search silently returns wrong/empty results.
-6. **Yacht-name maps must match exactly** (case, apostrophes, spacing). Resolve aliases via `C.YACHT_ALIASES` first. See [Constants](skill-constants-and-gids.md).
-7. **Checkout/charter task placement depends on section index** (`sections[2]`, `[6]`, `[7]`). Changing an Asana template's section order silently misplaces tasks.
-8. **Keep Asana calls sequential** with the existing small delays. Do not convert loops to `Promise.all` - it trips Asana rate limits mid-flow and leaves partial projects.
-9. **Use plain ASCII in source and docs** where possible (no smart quotes / em dashes). `package.json` already contains a mojibake character.
+5. **Yacht-name maps support aliases via `C.resolveYachtName()` and `C.getYachtNameVariants()`** (e.g., `"Miles Away"` <-> `"Miles Away II"`, `"Let it Go"` <-> `"Let It Go"`, `"Busy Bs"` <-> `"Busy B's"`).
 
 ---
 
 ## Line-Number Jump Table (Save Tool Calls)
 
-### 1. `functions/services/charterOrchestrator.js` (~602 lines)
+### 1. `functions/index.js` (~594 lines)
 | Lines | Section |
 |---|---|
-| `15-29` | `orchestrateNewCharter()` entry + Step 1 date validation |
-| `31-58` | Step 2 crew GIDs, Step 3 tracking task (+ `YACHT_ALIASES` resolution at L40-42) |
-| `60-87` | Steps 4-6: template lookup, `duplicateProject`, per-section tasks |
-| `89-121` | Step 7: editor member + Charter Info task update (`sections[2]`) |
-| `123-151` | Step 8: Charter Info / Arrivals / Departures board date sync |
-| `153-201` | Steps 9-10: checkout project duplication, `ensureProjectCustomFields`, bridging task |
-| `203-238` | Steps 11-15: Firestore save, maintenance, housekeeping, IN/OUT, back-to-back, return |
-| `244-322` | `createInOutSchedule()` - DEPARTURE/ARRIVAL tasks, turnaround days, day sections |
-| `329-415` | `detectBackToBack()` - Previous/Next Charter Scheduled (<=7d), debrief tasks (<=3d) |
-| `422-507` | `createMaintenanceTasks()` - fixed tasks, `@Standard Jobs`, Yacht Schedule board |
-| `514-585` | `createHousekeepingChecklists()` - 6 stage parents + subtasks, pay calc |
-| `589-601` | `daysBetween()`, `addDays()` helpers + export |
+| `21-64` | `fireMaintAndHK()`, `processQueuedOperation()` (FIFO queue processor) |
+| `69-192` | `validateRequired()`, `normalizePayload()`, `getDayName()` |
+| `201-486` | `exports.charterEvents`: lock acquisition, `Create`, `Delete`, `Edit`, `Cancel` handlers + background Maint/HK + audit log updates |
+| `497-540` | `exports.maintenanceEvents`: standalone Maintenance endpoint |
+| `551-593` | `exports.housekeepingEvents`: standalone Housekeeping endpoint |
 
-### 2. `functions/config/maintenance.js` (~303 lines)
+### 2. `functions/services/charterOrchestrator.js` (~656 lines)
 | Lines | Section |
 |---|---|
-| `7-18` | `STANDARD_JOBS_DEFAULT`, `STANDARD_JOBS_WITH_BATTERY` |
-| `22-50` | `YACHT_MAINTENANCE` (project GID, Yacht Schedule section, job list per yacht) |
-| `56-84` | `YACHT_STAGES` (housekeeping A/B/C hours per yacht) |
-| `90-178` | `INTERIOR_A` / `INTERIOR_B` / `INTERIOR_C` checklists |
-| `180-287` | `EXTERIOR_A` / `EXTERIOR_B` / `EXTERIOR_C` checklists |
-| `289-302` | `HOUSEKEEPING_LISTS` + exports |
+| `19-61` | `orchestrateNewCharter()`: date validation, crew GIDs, `resolveYachtName`, enum/template resolution |
+| `67-119` | Group A: tracking task + charter/checkout template duplication + section polling |
+| `124-199` | Group B: charter section tasks, tracking board updates, checkout sections |
+| `201-360` | Group C: Step 7 custom-field resilient update, bridging task, schedule tasks, `createInOutSchedule()`, `detectBackToBack()` |
+| `366-436` | Step 11: `maintPayload`, `hkPayload`, and `db.saveProvisioningState()` |
+| `442-527` | `createInOutSchedule()` |
+| `534-636` | `detectBackToBack()` |
 
-### 3. `functions/config/constants.js` (~269 lines)
+### 3. `functions/services/charterCleaner.js` (~314 lines)
 | Lines | Section |
 |---|---|
-| `5-17` | Workspace, team, editor member, `BOARDS` |
-| `20-79` | `CUSTOM_FIELDS` (field GIDs and enum option GIDs) |
-| `82-100` | `CHARTER_TEMPLATES`, `CHECKOUT_TEMPLATES` |
-| `103-132` | `MAINTENANCE_PROJECTS` (**unused / stale** - see Known Issues) |
-| `135-177` | `DAY_SECTIONS`, `CAPTAINS`, `CHEFS`, `BROKERS` |
-| `180-233` | `YACHT_ACRONYMS`, `YACHT_ALIASES` |
-| `236-268` | `MAINT_CREW`, `FIXED_MAINT_TASKS`, exports |
+| `40-96` | `deleteCharter()` Step 1: Firestore lookup + bridging task fallback (by name or `CHARTER_NUMBER`) |
+| `98-167` | Steps 2-6: `unlinkPreTasksFromCheckout()`, `deletePostTasksFromCheckout()`, IN/OUT task delete, `deleteAllProjectTasks()`, project delete, `rebridgeAdjacentCharters()`, HubSpot callback |
+| `174-223` | `rebridgeAdjacentCharters()` |
+| `231-312` | `unlinkPreTasksFromCheckout()`, `deletePostTasksFromCheckout()`, `deleteAllProjectTasks()` |
 
-### 4. `functions/index.js` (~172 lines)
-| Lines | Section |
+### 4. `functions/services/maintenanceService.js` (~263 lines) & `housekeepingService.js` (~257 lines)
+| File | Section |
 |---|---|
-| `14-30` | `DAY_GID_TO_NAME` (**unreliable** - see Known Issues) |
-| `53-98` | `normalizePayload()`, `getDayName()` |
-| `107-171` | `charterEvents` HTTP handler: method check, API key, Create/Delete/Edit switch |
+| `maintenanceService.js` L32-255 | `executeMaintenanceFlow()`: genset tasks, Standard Jobs + subtasks, Yacht Schedule task, 7a/7b bidirectional bridging |
+| `housekeepingService.js` L31-249 | `executeHousekeepingFlow()`: 6 stage parent tasks, batch subtasks, 7a/7b bidirectional bridging |
+
+### 5. `functions/config/constants.js` (~565 lines) & `maintenance.js` (~345 lines)
+| File | Section |
+|---|---|
+| `constants.js` L46-125 | `YACHT_ALIASES`, `YACHT_NAME_GIDS`, `resolveYachtName()`, `getYachtNameVariants()` |
+| `constants.js` L135-565 | `HK_YACHT_SECTIONS`, `CUSTOM_FIELDS`, `CHARTER_TEMPLATES`, `CHARTER_TYPE_IDS`, `BOAT_TO_MODEL`, `YACHT_ACRONYMS`, `getFixedMaintTasks()` |
+| `maintenance.js` L22-345 | `YACHT_MAINTENANCE`, `YACHT_STAGES`, `HOUSEKEEPING_LISTS`, `YACHT_HK_PROJECTS` |
 
 ---
 
@@ -95,24 +88,21 @@ Operation-Work-Flows/
 |-- .agent-skills/                     # This folder - agent skills & architecture guide
 |-- .firebaserc                        # default project: paynow-3f9dc
 |-- firebase.json                      # codebase "charter-orchestrator", disallowLegacyRuntimeConfig: true
-|-- README.md                          # Human overview (partially outdated - see skill-deployment-workflow.md)
-|-- test_payload.json                  # Sample Create payload (Southern Cross / SC-00259)
+|-- README.md                          # Human overview
+|-- test_payload.json                  # Sample Create payload
 `-- functions/
-    |-- index.js                       # charterEvents HTTP endpoint + normalizePayload() (~172 lines)
+    |-- index.js                       # charterEvents, maintenanceEvents, housekeepingEvents (~594 lines)
     |-- package.json                   # Node 22, firebase-functions ^7, firebase-admin ^13
     |-- config/
-    |   |-- constants.js               # Asana GIDs: boards, custom fields, templates, crew, acronyms (~269 lines)
-    |   `-- maintenance.js             # YACHT_MAINTENANCE, YACHT_STAGES, housekeeping checklists (~303 lines)
+    |   |-- constants.js               # Asana GIDs, YACHT_ALIASES, resolveYachtName (~565 lines)
+    |   `-- maintenance.js             # YACHT_MAINTENANCE, YACHT_STAGES, YACHT_HK_PROJECTS (~345 lines)
     |-- lib/
-    |   |-- asana.js                   # Asana REST wrapper (fetch + PAT) (~217 lines)
-    |   `-- firestore.js               # provisioning_state helpers + unused config readers (~93 lines)
+    |   |-- asana.js                   # Asana REST wrapper with write semaphore + 429/5xx retry (~373 lines)
+    |   |-- firestore.js               # "powerautomate" DB helpers, locks, queue, audit log (~365 lines)
+    |   `-- rateTracker.js             # Asana RPM sliding window monitor (~170 lines)
     `-- services/
-        |-- charterOrchestrator.js     # Create flow, Steps 1-15 (~602 lines)
-        `-- charterCleaner.js          # Delete/Edit flow, Steps 1-6 + legacyDelete() (~220 lines)
+        |-- charterOrchestrator.js     # Parallel Group A/B/C Create flow (~656 lines)
+        |-- charterCleaner.js          # Section-scoped Delete + adjacent charter re-bridging (~314 lines)
+        |-- maintenanceService.js      # Standalone Maintenance provisioning + 7a/7b bridge (~263 lines)
+        `-- housekeepingService.js     # Standalone Housekeeping provisioning + 7a/7b bridge (~257 lines)
 ```
-
----
-
-## Archive
-
-Superseded skill files go in [`archive/`](archive/) rather than being deleted, so historical context is preserved.

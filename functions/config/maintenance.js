@@ -7,23 +7,23 @@
 const STANDARD_JOBS_DEFAULT = [
   "De-odorize holding tanks",
   "Clean AC filters and lint guards",
-  "Check/Change water maker filters",
+  "Replace water maker filters / Run water maker",
 ];
 
 const STANDARD_JOBS_WITH_BATTERY = [
-  "Check/Top up battery water",
+  "Check and top up battery water",
   "De-odorize holding tanks",
   "Clean AC filters and lint guards",
-  "Check/Change water maker filters",
+  "Replace water maker filters / Run water maker",
 ];
 
 // Per-yacht maintenance config
 // project = maintenance project GID, charterSection = yacht schedule section GID
 const YACHT_MAINTENANCE = {
-  "Electrified":         { project: "930228245617935",  charterSection: "1201533939042402", jobs: STANDARD_JOBS_DEFAULT },
   "After Glow":          { project: "691587298515988",  charterSection: "1201533939042399", jobs: STANDARD_JOBS_DEFAULT },
   "Endless Summer":      { project: "717709282577739",  charterSection: "1201533939042403", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Let It Go":           { project: "732995064675562",  charterSection: "1201533939042404", jobs: STANDARD_JOBS_WITH_BATTERY },
+  "Let it Go":           { project: "732995064675562",  charterSection: "1201533939042404", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Osprey":              { project: "120612499680437",  charterSection: "1201533939042409", jobs: STANDARD_JOBS_WITH_BATTERY },
   "No Regrets":          { project: "123856243164731",  charterSection: "1201533939042410", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Secret Oasis":        { project: "691495498921912",  charterSection: "1201533939042413", jobs: STANDARD_JOBS_DEFAULT },
@@ -31,20 +31,24 @@ const YACHT_MAINTENANCE = {
   "Home Sweet Home":     { project: "1199964646135475", charterSection: "1201533939042415", jobs: STANDARD_JOBS_DEFAULT },
   "Moonstruck":          { project: "887295831365148",  charterSection: "1201546378387133", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Sol Liv":             { project: "1201060966855795", charterSection: "1201533939042416", jobs: STANDARD_JOBS_DEFAULT },
-  "Sail La Vie":         { project: "1110518043677775", charterSection: "1201546378387134", jobs: STANDARD_JOBS_DEFAULT },
+  "Sail La Vie":         { project: "1110518043677775", charterSection: "1201546378387134", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Home Again":          { project: "1201589713415165", charterSection: "1201589713415183", jobs: STANDARD_JOBS_DEFAULT },
   "Job Site":            { project: "1202117165700542", charterSection: "1202117165700546", jobs: STANDARD_JOBS_DEFAULT },
-  "Windborne":           { project: "732995064675487",  charterSection: "1202205136050878", jobs: STANDARD_JOBS_WITH_BATTERY },
   "Auto Pirate":         { project: "1203226595626562", charterSection: "1203237266816984", jobs: STANDARD_JOBS_DEFAULT },
   "5 O'Clock Somewhere": { project: "1203866751839439", charterSection: "1203866751839442", jobs: STANDARD_JOBS_DEFAULT },
+  "5 0'Clock Somewhere": { project: "1203866751839439", charterSection: "1203866751839442", jobs: STANDARD_JOBS_DEFAULT },
   "Home Away":           { project: "1205521963054572", charterSection: "1205521963054595", jobs: STANDARD_JOBS_DEFAULT },
   "Busy B's":            { project: "1205948903684939", charterSection: "1205952544276676", jobs: STANDARD_JOBS_DEFAULT },
+  "Busy Bs":             { project: "1205948903684939", charterSection: "1205952544276676", jobs: STANDARD_JOBS_DEFAULT },
+  "Busy Bee's":          { project: "1205948903684939", charterSection: "1205952544276676", jobs: STANDARD_JOBS_DEFAULT },
   "Treasure Hunter":     { project: "1206122229775528", charterSection: "1206131284029027", jobs: STANDARD_JOBS_DEFAULT },
   "Sea Glass":           { project: "1207406595667894", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
+  "SeaGlass":            { project: "1207406595667894", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Big Kid Island":      { project: "1207473667277308", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "The Drake":           { project: "1208391787698878", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Southern Cross":      { project: "1210331621233575", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Way Maker":           { project: "1210331621233578", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
+  "Miles Away II":       { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Miles Away":          { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
   "Decent Effort":       { project: "1211811642616860", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
 };
@@ -56,6 +60,7 @@ const YACHT_MAINTENANCE = {
 const YACHT_STAGES = {
   "After Glow":          { A: 4, B: 2, C: 2 },
   "Let It Go":           { A: 4, B: 2, C: 2 },
+  "Let it Go":           { A: 4, B: 2, C: 2 },
   "Endless Summer":      { A: 4, B: 2, C: 2 },
   "Moonstruck":          { A: 4, B: 2, C: 2 },
   "No Regrets":          { A: 4, B: 2, C: 2 },
@@ -64,21 +69,24 @@ const YACHT_STAGES = {
   "Summer Breez":        { A: 8, B: 4, C: 4 },
   "Home Sweet Home":     { A: 8, B: 4, C: 4 },
   "Sol Liv":             { A: 8, B: 4, C: 4 },
-  "Out Of Office":       { A: 8, B: 4, C: 4 },
   "Sail La Vie":         { A: 4, B: 2, C: 2 },
   "Home Again":          { A: 8, B: 4, C: 4 },
   "Job Site":            { A: 8, B: 4, C: 4 },
-  "Windborne":           { A: 4, B: 2, C: 2 },
   "Auto Pirate":         { A: 8, B: 4, C: 4 },
   "5 O'Clock Somewhere": { A: 8, B: 4, C: 4 },
+  "5 0'Clock Somewhere": { A: 8, B: 4, C: 4 },
   "Home Away":           { A: 8, B: 4, C: 4 },
   "Busy B's":            { A: 8, B: 4, C: 4 },
+  "Busy Bs":             { A: 8, B: 4, C: 4 },
+  "Busy Bee's":          { A: 8, B: 4, C: 4 },
   "Treasure Hunter":     { A: 8, B: 4, C: 4 },
   "Sea Glass":           { A: 8, B: 4, C: 4 },
+  "SeaGlass":            { A: 8, B: 4, C: 4 },
   "Big Kid Island":      { A: 8, B: 4, C: 4 },
   "The Drake":           { A: 8, B: 4, C: 4 },
   "Southern Cross":      { A: 5, B: 2.5, C: 2.5 },
   "Way Maker":           { A: 5, B: 2.5, C: 2.5 },
+  "Miles Away II":       { A: 8, B: 4, C: 4 },
   "Miles Away":          { A: 8, B: 4, C: 4 },
   "Decent Effort":       { A: 8, B: 4, C: 4 },
 };
@@ -295,8 +303,46 @@ const HOUSEKEEPING_LISTS = {
   EXTERIOR_C,
 };
 
+// ============================================================
+// Per-Yacht Housekeeping Evergreen Projects (House Keeping team)
+// ============================================================
+const YACHT_HK_PROJECTS = {
+  "After Glow":          "1201147357909036",
+  "Endless Summer":      "1200108916385253",
+  "Let It Go":           "1200109014812819",
+  "Let it Go":           "1200109014812819",
+  "Osprey":              "1200109324077882",
+  "No Regrets":          "1200109277651773",
+  "Secret Oasis":        "1200109014813210",
+  "Summer Breez":        "1200109277651773",
+  "Home Sweet Home":     "1200302808196656",
+  "Moonstruck":          "1200065537319390",
+  "Sol Liv":             "1201089258593949",
+  "Sail La Vie":         "1201461490468616",
+  "Home Again":          "1201575534741522",
+  "Job Site":            "1202117159894533",
+  "Auto Pirate":         "1203226595626565",
+  "5 O'Clock Somewhere": "1203866755713178",
+  "5 0'Clock Somewhere": "1203866755713178",
+  "Home Away":           "1205521963054609",
+  "Busy B's":            "1205948904659171",
+  "Busy Bs":             "1205948904659171",
+  "Busy Bee's":          "1205948904659171",
+  "Treasure Hunter":     "1206122229775531",
+  "Sea Glass":           "1207406595667897",
+  "SeaGlass":            "1207406595667897",
+  "Big Kid Island":      "1207473667277311",
+  "The Drake":           "1208399911578378",
+  "Southern Cross":      "1210331621233585",
+  "Way Maker":           "1210331621233588",
+  "Miles Away II":       "1211811518543270",
+  "Miles Away":          "1211811518543270",
+  "Decent Effort":       "1211811518543273",
+};
+
 module.exports = {
   YACHT_MAINTENANCE,
   YACHT_STAGES,
   HOUSEKEEPING_LISTS,
+  YACHT_HK_PROJECTS,
 };
