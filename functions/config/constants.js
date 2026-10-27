@@ -512,23 +512,23 @@ const MAINT_CREW = {
 // --- Fixed Maintenance Tasks (from real project) ---
 // --- Fixed Maintenance Tasks: Dual Genset (7 tasks) ---
 const FIXED_MAINT_TASKS_DUAL = [
-  { name: "Service port genset",              dept: "1199963408496827", hours: 1.5 },
-  { name: "Service stb genset",               dept: "1199963408496827", hours: 1.5 },
-  { name: "Wash port and stb engine rooms",   dept: "1199963408496827", hours: 1.5 },
-  { name: "Clean Genset Engine strainers",     dept: "1199963408496827", hours: 0.5 },
-  { name: "Port and stb engine checks",       dept: "1199963408496827", hours: 1 },
-  { name: "Systems check",                    dept: "1199963408496830", hours: 1 },
-  { name: "Rigging check and lubrication",    dept: "1199963408496828", hours: 2 },
+  { name: "Service port genset",              assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1.5 },
+  { name: "Service stb genset",               assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1.5 },
+  { name: "Wash port and stb engine rooms",   assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1.5 },
+  { name: "Clean Genset Engine strainers",     assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 0.5 },
+  { name: "Port and stb engine checks",       assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1 },
+  { name: "Systems check",                    assignee: null,                        dept: "1199963408496830", hours: 1 },
+  { name: "Rigging check and lubrication",    assignee: MAINT_CREW.SHERLOCK_HARTMAN, dept: "1199963408496828", hours: 2 },
 ];
 
 // --- Fixed Maintenance Tasks: Single Genset (6 tasks) ---
 const FIXED_MAINT_TASKS_SINGLE = [
-  { name: "Service genset",                   dept: "1199963408496827", hours: 1.5 },
-  { name: "Wash port and stb engine rooms",   dept: "1199963408496827", hours: 1.5 },
-  { name: "Clean genset strainer",             dept: "1199963408496827", hours: 0.5 },
-  { name: "Check port and stb engines",       dept: "1199963408496827", hours: 1 },
-  { name: "Systems check",                    dept: "1199963408496830", hours: 1 },
-  { name: "Rigging check and lubrication",    dept: "1199963408496828", hours: 2 },
+  { name: "Service genset",                   assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1.5 },
+  { name: "Wash port and stb engine rooms",   assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1.5 },
+  { name: "Clean genset strainer",             assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 0.5 },
+  { name: "Check port and stb engines",       assignee: MAINT_CREW.DAVID_ST_CLAIR,   dept: "1199963408496827", hours: 1 },
+  { name: "Systems check",                    assignee: null,                        dept: "1199963408496830", hours: 1 },
+  { name: "Rigging check and lubrication",    assignee: MAINT_CREW.SHERLOCK_HARTMAN, dept: "1199963408496828", hours: 2 },
 ];
 
 // --- Genset Type Resolution ---

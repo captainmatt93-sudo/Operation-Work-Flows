@@ -28,6 +28,7 @@ function log(step, msg) {
  * @param {string} payload.startDate
  * @param {string[]} payload.jobs - standard job subtask names
  * @param {string|null} payload.charterSection - yacht schedule section GID
+ * @param {string|null} [payload.captainGid] - captain user GID (optional)
  */
 async function executeMaintenanceFlow(payload) {
   const {
@@ -44,6 +45,7 @@ async function executeMaintenanceFlow(payload) {
     startDate,
     jobs,
     charterSection: rawCharterSection,
+    captainGid,
   } = payload;
 
   const resolvedYacht = C.resolveYachtName(yachtName);
@@ -80,7 +82,7 @@ async function executeMaintenanceFlow(payload) {
   }
   let turnAroundSectionGid = null;
   for (const s of maintProjSections) {
-    if (s.name && s.name.trim() === "Turn Around Jobs") {
+    if (s.name && s.name.trim().toLowerCase() === "turn around jobs") {
       turnAroundSectionGid = s.gid;
       break;
     }
@@ -110,10 +112,17 @@ async function executeMaintenanceFlow(payload) {
     if (fixedTask.dept === C.CUSTOM_FIELDS.DEPT_MECHANICAL && mechSectionGid) {
       memberships.push({ project: C.BOARDS.MECHANICAL_PROJECT, section: mechSectionGid });
     }
+
+    const assignee = fixedTask.assignee
+      || (fixedTask.dept === C.CUSTOM_FIELDS.DEPT_MECHANICAL ? C.MAINT_CREW.DAVID_ST_CLAIR
+        : fixedTask.dept === C.CUSTOM_FIELDS.DEPT_RIGGING ? C.MAINT_CREW.SHERLOCK_HARTMAN
+        : captainGid || null);
+
     const task = await asana.createTask({
       name: fixedTask.name,
       projects: memberships.map(m => m.project),
       memberships,
+      assignee,
       due_on: endDate,
       custom_fields: {
         ...maintFields,
@@ -122,7 +131,7 @@ async function executeMaintenanceFlow(payload) {
       },
     });
     const taskGid = task.data.gid;
-    log(4, `Created: ${fixedTask.name} (${taskGid})`);
+    log(4, `Created: ${fixedTask.name} (${taskGid}) [assignee=${assignee || "unassigned"}]`);
     return taskGid;
   }));
   tasksCreated += fixedResults.length;
@@ -143,6 +152,7 @@ async function executeMaintenanceFlow(payload) {
     name: "Standard Jobs",
     projects: stdMemberships.map(m => m.project),
     memberships: stdMemberships,
+    assignee: captainGid || null,
     due_on: endDate,
     custom_fields: {
       ...maintFields,

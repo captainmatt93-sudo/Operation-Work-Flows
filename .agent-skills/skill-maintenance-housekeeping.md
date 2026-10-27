@@ -55,3 +55,9 @@ Known gaps today: `"Out Of Office"` has stages but no maintenance entry or acron
 - Checklist arrays are flat: heading lines and detail lines are both subtasks. Preserve order - it is the order crews see.
 - Edit in plain ASCII. Avoid smart quotes and em dashes (mojibake risk).
 - Changes only affect charters created after deploy; existing checkout projects are not updated.
+
+### Default Maintenance Task Assignees (`MAINT_CREW`)
+- **Mechanical tasks** (`dept: "1199963408496827"` — *Service genset*, *Service port/stb genset*, *Wash port and stb engine rooms*, *Clean genset strainer*, *Check port and stb engines*): **David St. Clair** (`MAINT_CREW.DAVID_ST_CLAIR` = `"732999672531073"`).
+- **Rigging tasks** (`dept: "1199963408496828"` — *Rigging check and lubrication*): **Sherlock Hartman** (`MAINT_CREW.SHERLOCK_HARTMAN` = `"130812572926108"`).
+- **Systems check & Standard Jobs** (`dept: "1199963408496830"`): `captainGid || null` (assigned to the Captain if present on the charter, otherwise unassigned).
+- **Turn Around Jobs section matching**: Case-insensitive (`s.name.trim().toLowerCase() === "turn around jobs"`) across both `maintenanceService.js` and `housekeepingService.js`.

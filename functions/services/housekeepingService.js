@@ -68,7 +68,7 @@ async function executeHousekeepingFlow(payload) {
   if (hkProjectGid) {
     const hkProjSections = await asana.getProjectSections(hkProjectGid);
     for (const s of hkProjSections) {
-      if (s.name && s.name.trim() === "Turn Around Jobs") {
+      if (s.name && s.name.trim().toLowerCase() === "turn around jobs") {
         hkTurnAroundGid = s.gid;
         break;
       }
