@@ -468,12 +468,17 @@ async function createInOutSchedule(data, charterProjectGid, yachtNameId, charter
   // Search for closest departures within ±30 days (same yacht)
   const thirtyBefore = addDays(endDate, -30);
   const thirtyAfter = addDays(endDate, 30);
+  const effectiveYachtId = yachtNameId || data.yacht_name_id || null;
+  const resolvedYacht = C.resolveYachtName(data.yacht_name);
+  const yachtVariants = C.getYachtNameVariants(data.yacht_name).map(v => v.toLowerCase());
 
   const nearbyDepartures = await asana.searchTasks({
     "projects.any": C.BOARDS.IN_OUT_SCHEDULE,
     "due_on.before": thirtyAfter,
     "due_on.after": thirtyBefore,
-    [`custom_fields.${C.CUSTOM_FIELDS.YACHT_NAME}.value`]: yachtNameId || data.yacht_name_id,
+    ...(effectiveYachtId
+      ? { [`custom_fields.${C.CUSTOM_FIELDS.YACHT_NAME}.value`]: effectiveYachtId }
+      : { text: `"${resolvedYacht}"` }),
     [`custom_fields.${C.CUSTOM_FIELDS.IN_OUT_TYPE}.value`]: C.CUSTOM_FIELDS.IN_OUT_DEPARTURE,
     "opt_fields": "name,due_on",
   });
@@ -482,6 +487,9 @@ async function createInOutSchedule(data, charterProjectGid, yachtNameId, charter
   let closestDays = 10000;
   for (const dep of nearbyDepartures) {
     if (!dep.due_on) continue;
+    // Guard against cross-boat matches if custom field was missing
+    const depYacht = dep.name?.split(" | ")[1]?.trim().toLowerCase();
+    if (depYacht && yachtVariants.length > 0 && !yachtVariants.includes(depYacht)) continue;
     const diff = daysBetween(endDate, dep.due_on);
     if (diff >= 0 && diff < closestDays) {
       closestDays = diff;
@@ -544,9 +552,14 @@ async function detectBackToBack(data, checkoutProjectGid, charterName, sectionMa
 
   // Search all projects in the Charter Info board for the same yacht
   const tSearch = Date.now();
+  const effectiveYachtId = yachtNameId || data.yacht_name_id || null;
+  const resolvedYacht = C.resolveYachtName(yachtName);
+  const yachtVariants = C.getYachtNameVariants(yachtName).map(v => v.toLowerCase());
   const allProjects = await asana.searchTasks({
     "projects.any": C.BOARDS.CHARTER_INFO,
-    [`custom_fields.${C.CUSTOM_FIELDS.YACHT_NAME}.value`]: yachtNameId || data.yacht_name_id,
+    ...(effectiveYachtId
+      ? { [`custom_fields.${C.CUSTOM_FIELDS.YACHT_NAME}.value`]: effectiveYachtId }
+      : { text: `"${resolvedYacht}"` }),
     "opt_fields": "name,start_on,due_on",
   });
   logger.info(`[B2B] Search completed in ${Date.now() - tSearch}ms — found ${allProjects.length} charters`);
@@ -560,6 +573,9 @@ async function detectBackToBack(data, checkoutProjectGid, charterName, sectionMa
     if (!proj.due_on || !proj.start_on) continue;
     // Skip self
     if (proj.name === charterName) continue;
+    // Guard against cross-boat matches if custom field was missing
+    const projYacht = proj.name?.split(" | ")[0]?.trim().toLowerCase();
+    if (projYacht && yachtVariants.length > 0 && !yachtVariants.includes(projYacht)) continue;
 
     // Days between current start and this charter's end (previous charter)
     const prevDiff = daysBetween(proj.due_on, startDate);

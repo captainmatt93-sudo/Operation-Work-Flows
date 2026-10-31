@@ -42,15 +42,17 @@ const YACHT_MAINTENANCE = {
   "Busy Bs":             { project: "1205948903684939", charterSection: "1205952544276676", jobs: STANDARD_JOBS_DEFAULT },
   "Busy Bee's":          { project: "1205948903684939", charterSection: "1205952544276676", jobs: STANDARD_JOBS_DEFAULT },
   "Treasure Hunter":     { project: "1206122229775528", charterSection: "1206131284029027", jobs: STANDARD_JOBS_DEFAULT },
-  "Sea Glass":           { project: "1207406595667894", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "SeaGlass":            { project: "1207406595667894", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Big Kid Island":      { project: "1207473667277308", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "The Drake":           { project: "1208391787698878", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Southern Cross":      { project: "1210331621233575", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Way Maker":           { project: "1210331621233578", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Miles Away II":       { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Miles Away":          { project: "1210775057987624", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
-  "Decent Effort":       { project: "1211811642616860", charterSection: null, jobs: STANDARD_JOBS_DEFAULT },
+  "Sea Glass":           { project: "1207406595667894", charterSection: "1207406628662229", jobs: STANDARD_JOBS_DEFAULT },
+  "SeaGlass":            { project: "1207406595667894", charterSection: "1207406628662229", jobs: STANDARD_JOBS_DEFAULT },
+  "Big Kid Island":      { project: "1207473667277308", charterSection: "1207472672951875", jobs: STANDARD_JOBS_DEFAULT },
+  "The Drake":           { project: "1208391787698878", charterSection: "1208400596928937", jobs: STANDARD_JOBS_DEFAULT },
+  "Southern Cross":      { project: "1210331621233575", charterSection: "1210331621233582", jobs: STANDARD_JOBS_DEFAULT },
+  "Way Maker":           { project: "1210331621233578", charterSection: "1210331621233581", jobs: STANDARD_JOBS_DEFAULT },
+  "Miles Away II":       { project: "1210775057987624", charterSection: "1211811760681497", jobs: STANDARD_JOBS_DEFAULT },
+  "Miles Away":          { project: "1210775057987624", charterSection: "1211811760681497", jobs: STANDARD_JOBS_DEFAULT },
+  "Decent Effort":       { project: "1211811642616860", charterSection: "1211811761922884", jobs: STANDARD_JOBS_DEFAULT },
+  "Sea Cat-Alyst":       { project: "1220095351919692", charterSection: "1220096000210714", jobs: STANDARD_JOBS_DEFAULT },
+  "Sea Cat":             { project: "1220095351919692", charterSection: "1220096000210714", jobs: STANDARD_JOBS_DEFAULT },
 };
 
 // ============================================================
@@ -89,6 +91,8 @@ const YACHT_STAGES = {
   "Miles Away II":       { A: 8, B: 4, C: 4 },
   "Miles Away":          { A: 8, B: 4, C: 4 },
   "Decent Effort":       { A: 8, B: 4, C: 4 },
+  "Sea Cat-Alyst":       { A: 8, B: 4, C: 4 },
+  "Sea Cat":             { A: 8, B: 4, C: 4 },
 };
 
 // ============================================================
@@ -338,6 +342,8 @@ const YACHT_HK_PROJECTS = {
   "Miles Away II":       "1211811518543270",
   "Miles Away":          "1211811518543270",
   "Decent Effort":       "1211811518543273",
+  "Sea Cat-Alyst":       "1220098565321037",
+  "Sea Cat":             "1220098565321037",
 };
 
 module.exports = {

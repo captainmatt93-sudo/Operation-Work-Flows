@@ -53,6 +53,8 @@ const YACHT_ALIASES = {
   "SeaGlass":            "Sea Glass",
   "MoonStruck":          "Moonstruck",
   "Out of Office":       "Out Of Office",
+  "Sea Cat":             "Sea Cat-Alyst",
+  "Sea Cat-alyst":       "Sea Cat-Alyst",
 };
 
 // --- Yacht Name enum GIDs (on YACHT_NAME custom field) ---
@@ -88,6 +90,8 @@ const YACHT_NAME_GIDS = {
   "Miles Away II":       "1211811642616857",
   "Miles Away":          "1211811642616857",
   "Decent Effort":       "1211811642616858",
+  "Sea Cat-Alyst":       "1220097481120528",
+  "Sea Cat":             "1220097481120528",
 };
 
 /**
@@ -165,6 +169,8 @@ const HK_YACHT_SECTIONS = {
   "Miles Away II":       "1211811760681495",
   "Miles Away":          "1211811760681495",
   "Decent Effort":       "1211811761922882",
+  "Sea Cat-Alyst":       "1220099177143429",
+  "Sea Cat":             "1220099177143429",
 };
 
 // --- Custom Field GIDs ---
@@ -357,6 +363,8 @@ const MAINTENANCE_PROJECTS = {
   "Relentless II":  "1210331621233578",
   "Gratitude":      "1210775057987624",
   "Nauti Buoys":    "1211811642616860",
+  "Sea Cat-Alyst":  "1220095351919692",
+  "Sea Cat":        "1220095351919692",
 };
 
 // --- IN/OUT Schedule Day-of-Week Sections (Flow 7) ---
@@ -465,6 +473,8 @@ const BOAT_TO_MODEL = {
   "Miles Away II":       "VOYAGE 590",
   "Miles Away":          "VOYAGE 590",
   "Decent Effort":       "VOYAGE 590",
+  "Sea Cat-Alyst":       "VOYAGE 590",
+  "Sea Cat":             "VOYAGE 590",
   "Summer Breez":        "VOYAGE 590e",
 };
 
@@ -501,6 +511,8 @@ const YACHT_ACRONYMS = {
   "Miles Away":          "MA2",
   "Decent Effort":       "DE",
   "No Regrets":          "NR",
+  "Sea Cat-Alyst":       "SA",
+  "Sea Cat":             "SA",
 };
 
 // --- Maintenance Crew Assignments ---
