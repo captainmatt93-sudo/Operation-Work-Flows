@@ -186,10 +186,15 @@ async function orchestrateNewCharter(payload) {
       // TEST MODE: Only adding Matt Nelson to avoid notifying the whole team
       // TODO: Restore to getWorkspaceUsers() for production
       const TEST_MEMBER_GID_CO = "143158124817167"; // Matthew Nelson
+      const checkoutColor = C.CHECKOUT_COLORS[yachtModel] || null;
       let [coSections] = await Promise.all([
         asana.getProjectSections(checkoutProjectGid),
         asana.addProjectMember(checkoutProjectGid, TEST_MEMBER_GID_CO)
           .catch(err => logger.warn(`Could not add member to checkout: ${err.message}`)),
+        checkoutColor
+          ? asana.updateProject(checkoutProjectGid, { color: checkoutColor })
+              .catch(err => logger.warn(`Could not set checkout color: ${err.message}`))
+          : Promise.resolve(),
       ]);
       // Poll if checkout project sections are still duplicating asynchronously
       for (let attempt = 1; attempt <= 6; attempt++) {

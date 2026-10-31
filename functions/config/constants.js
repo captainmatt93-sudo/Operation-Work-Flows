@@ -349,6 +349,18 @@ const CHECKOUT_TEMPLATES = {
   "default":     "1210380647223348",
 };
 
+// --- Checkout Project Colors (Asana write enum by model) ---
+const CHECKOUT_COLORS = {
+  "VOYAGE 480":  "light-pink",    // maps to Asana "pink"
+  "VOYAGE 480e": "light-pink",
+  "VOYAGE 510":  "dark-red",      // maps to Asana "red"
+  "VOYAGE 510e": "dark-red",
+  "VOYAGE 520":  "light-purple",  // maps to Asana "indigo"
+  "VOYAGE 580":  "light-yellow",  // maps to Asana "yellow"
+  "VOYAGE 590":  "light-teal",    // maps to Asana "blue-green" (Turquoise)
+  "VOYAGE 590e": "light-teal",
+};
+
 // --- Per-Yacht Maintenance Project GIDs (Flow 5) ---
 const MAINTENANCE_PROJECTS = {
   "Endless Summer": "930228245617935",
@@ -610,6 +622,7 @@ module.exports = {
   BOARDING_TIME_IDS,
   YACHT_MODEL_IDS,
   CHECKOUT_TEMPLATES,
+  CHECKOUT_COLORS,
   MAINTENANCE_PROJECTS,
   DAY_SECTIONS,
   HK_STAGE_SECTIONS,
