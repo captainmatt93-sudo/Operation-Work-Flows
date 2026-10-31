@@ -55,6 +55,14 @@ const YACHT_ALIASES = {
   "Out of Office":       "Out Of Office",
   "Sea Cat":             "Sea Cat-Alyst",
   "Sea Cat-alyst":       "Sea Cat-Alyst",
+  "It's about time":     "It's About Time",
+  "Its About Time":      "It's About Time",
+  "Its about time":      "It's About Time",
+  "About Time":          "It's About Time",
+  "About time":          "It's About Time",
+  "VOYAGE 590 #18":      "It's About Time",
+  "VOYAGE 590 # 18":     "It's About Time",
+  "590 #18":             "It's About Time",
 };
 
 // --- Yacht Name enum GIDs (on YACHT_NAME custom field) ---
@@ -92,6 +100,10 @@ const YACHT_NAME_GIDS = {
   "Decent Effort":       "1211811642616858",
   "Sea Cat-Alyst":       "1220097481120528",
   "Sea Cat":             "1220097481120528",
+  "It's About Time":     "1220098570898529",
+  "It's about time":     "1220098570898529",
+  "About Time":          "1220098570898529",
+  "VOYAGE 590 #18":      "1220098570898529",
 };
 
 /**
@@ -171,6 +183,10 @@ const HK_YACHT_SECTIONS = {
   "Decent Effort":       "1211811761922882",
   "Sea Cat-Alyst":       "1220099177143429",
   "Sea Cat":             "1220099177143429",
+  "It's About Time":     "1220098570898530",
+  "It's about time":     "1220098570898530",
+  "About Time":          "1220098570898530",
+  "VOYAGE 590 #18":      "1220098570898530",
 };
 
 // --- Custom Field GIDs ---
@@ -365,6 +381,9 @@ const MAINTENANCE_PROJECTS = {
   "Nauti Buoys":    "1211811642616860",
   "Sea Cat-Alyst":  "1220095351919692",
   "Sea Cat":        "1220095351919692",
+  "It's About Time":"1220096004337545",
+  "About Time":     "1220096004337545",
+  "VOYAGE 590 #18": "1220096004337545",
 };
 
 // --- IN/OUT Schedule Day-of-Week Sections (Flow 7) ---
@@ -475,6 +494,10 @@ const BOAT_TO_MODEL = {
   "Decent Effort":       "VOYAGE 590",
   "Sea Cat-Alyst":       "VOYAGE 590",
   "Sea Cat":             "VOYAGE 590",
+  "It's About Time":     "VOYAGE 590",
+  "It's about time":     "VOYAGE 590",
+  "About Time":          "VOYAGE 590",
+  "VOYAGE 590 #18":      "VOYAGE 590",
   "Summer Breez":        "VOYAGE 590e",
 };
 
@@ -513,6 +536,10 @@ const YACHT_ACRONYMS = {
   "No Regrets":          "NR",
   "Sea Cat-Alyst":       "SA",
   "Sea Cat":             "SA",
+  "It's About Time":     "AT",
+  "It's about time":     "AT",
+  "About Time":          "AT",
+  "VOYAGE 590 #18":      "AT",
 };
 
 // --- Maintenance Crew Assignments ---
@@ -549,6 +576,7 @@ const SINGLE_GENSET_MODELS = new Set([
 ]);
 const SINGLE_GENSET_BOATS = new Set([
   "The Drake", "Miles Away II", "Miles Away", "Decent Effort",
+  "It's About Time", "It's about time", "About Time", "VOYAGE 590 #18",
 ]);
 
 function isSingleGenset(yachtName, modelName) {

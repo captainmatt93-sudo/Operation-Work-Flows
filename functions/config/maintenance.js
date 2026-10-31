@@ -53,6 +53,10 @@ const YACHT_MAINTENANCE = {
   "Decent Effort":       { project: "1211811642616860", charterSection: "1211811761922884", jobs: STANDARD_JOBS_DEFAULT },
   "Sea Cat-Alyst":       { project: "1220095351919692", charterSection: "1220096000210714", jobs: STANDARD_JOBS_DEFAULT },
   "Sea Cat":             { project: "1220095351919692", charterSection: "1220096000210714", jobs: STANDARD_JOBS_DEFAULT },
+  "It's About Time":     { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
+  "It's about time":     { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
+  "About Time":          { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
+  "VOYAGE 590 #18":      { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
 };
 
 // ============================================================
@@ -93,6 +97,10 @@ const YACHT_STAGES = {
   "Decent Effort":       { A: 8, B: 4, C: 4 },
   "Sea Cat-Alyst":       { A: 8, B: 4, C: 4 },
   "Sea Cat":             { A: 8, B: 4, C: 4 },
+  "It's About Time":     { A: 8, B: 4, C: 4 },
+  "It's about time":     { A: 8, B: 4, C: 4 },
+  "About Time":          { A: 8, B: 4, C: 4 },
+  "VOYAGE 590 #18":      { A: 8, B: 4, C: 4 },
 };
 
 // ============================================================
@@ -344,6 +352,10 @@ const YACHT_HK_PROJECTS = {
   "Decent Effort":       "1211811518543273",
   "Sea Cat-Alyst":       "1220098565321037",
   "Sea Cat":             "1220098565321037",
+  "It's About Time":     "1220096004337550",
+  "It's about time":     "1220096004337550",
+  "About Time":          "1220096004337550",
+  "VOYAGE 590 #18":      "1220096004337550",
 };
 
 module.exports = {
