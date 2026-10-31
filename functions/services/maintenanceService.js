@@ -36,7 +36,7 @@ async function executeMaintenanceFlow(payload) {
     yachtModel: rawYachtModel,
     maintProjectGid: rawMaintProjectGid,
     checkoutProjectGid,
-    maintSectionGid,
+    maintSectionGid: rawMaintSectionGid,
     charterName,
     charterNumber,
     yachtNameId: rawYachtNameId,
@@ -67,12 +67,18 @@ async function executeMaintenanceFlow(payload) {
   const gensetType = C.isSingleGenset(yachtName, yachtModel) ? "single" : "dual";
   log(1, `Genset type: ${gensetType} → ${fixedTasks.length} fixed tasks`);
 
-  // ── Step 2: Look up Mechanical + Turn Around sections concurrently ────
+  // ── Step 2: Look up Mechanical + Turn Around + Checkout sections concurrently ────
   log(2, "Looking up Mechanical and Turn Around sections");
-  const [mechSections, maintProjSections] = await Promise.all([
+  const [mechSections, maintProjSections, coSections] = await Promise.all([
     asana.getProjectSections(C.BOARDS.MECHANICAL_PROJECT),
     asana.getProjectSections(maintProjectGid),
+    !rawMaintSectionGid && checkoutProjectGid
+      ? asana.getProjectSections(checkoutProjectGid).catch(() => [])
+      : Promise.resolve([]),
   ]);
+  const maintSectionGid = rawMaintSectionGid
+    || coSections.find(s => s.name && s.name.includes("Post - Maintenance"))?.gid
+    || null;
   let mechSectionGid = null;
   for (const s of mechSections) {
     if (s.name && s.name.trim().startsWith("Service Due")) {

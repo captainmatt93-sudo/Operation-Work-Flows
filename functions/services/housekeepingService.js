@@ -32,7 +32,7 @@ async function executeHousekeepingFlow(payload) {
   const {
     yachtName,
     checkoutProjectGid,
-    hkSectionGid,
+    hkSectionGid: rawHkSectionGid,
     charterName,
     charterNumber,
     yachtNameId: rawYachtNameId,
@@ -63,10 +63,16 @@ async function executeHousekeepingFlow(payload) {
   const hkProjectGid = M.YACHT_HK_PROJECTS[yachtName] || M.YACHT_HK_PROJECTS[resolvedYacht] || null;
   log(1, `Evergreen HK project: ${hkProjectGid || "NOT FOUND"}`);
 
-  // ── Step 2: Look up "Turn Around Jobs" section on HK project ─
+  // ── Step 2: Look up "Turn Around Jobs" section on HK project (+ fallback hkSectionGid) ─
   let hkTurnAroundGid = null;
+  let hkSectionGid = rawHkSectionGid || null;
+  const [hkProjSections, coSections] = await Promise.all([
+    hkProjectGid ? asana.getProjectSections(hkProjectGid) : Promise.resolve([]),
+    !hkSectionGid && checkoutProjectGid
+      ? asana.getProjectSections(checkoutProjectGid).catch(() => [])
+      : Promise.resolve([]),
+  ]);
   if (hkProjectGid) {
-    const hkProjSections = await asana.getProjectSections(hkProjectGid);
     for (const s of hkProjSections) {
       if (s.name && s.name.trim().toLowerCase() === "turn around jobs") {
         hkTurnAroundGid = s.gid;
@@ -74,6 +80,9 @@ async function executeHousekeepingFlow(payload) {
       }
     }
     log(2, `HK Turn Around Jobs section: ${hkTurnAroundGid || "NOT FOUND"}`);
+  }
+  if (!hkSectionGid && coSections.length > 0) {
+    hkSectionGid = coSections.find(s => s.name && s.name.includes("Post - House"))?.gid || null;
   }
 
   // ── Step 3: Resolve yacht section on HK Yacht Schedule ───────

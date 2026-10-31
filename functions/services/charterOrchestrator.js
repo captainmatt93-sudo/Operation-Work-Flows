@@ -186,11 +186,19 @@ async function orchestrateNewCharter(payload) {
       // TEST MODE: Only adding Matt Nelson to avoid notifying the whole team
       // TODO: Restore to getWorkspaceUsers() for production
       const TEST_MEMBER_GID_CO = "143158124817167"; // Matthew Nelson
-      const [coSections] = await Promise.all([
+      let [coSections] = await Promise.all([
         asana.getProjectSections(checkoutProjectGid),
         asana.addProjectMember(checkoutProjectGid, TEST_MEMBER_GID_CO)
           .catch(err => logger.warn(`Could not add member to checkout: ${err.message}`)),
       ]);
+      // Poll if checkout project sections are still duplicating asynchronously
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        const hasPostMaint = coSections.some(s => s.name && s.name.includes("Post - Maintenance"));
+        if (hasPostMaint) break;
+        log(10, `Checkout sections poll ${attempt}/6: waiting for Post - Maintenance Info...`);
+        await new Promise(r => setTimeout(r, 4000));
+        coSections = await asana.getProjectSections(checkoutProjectGid);
+      }
       const sectionMap = {};
       for (const s of coSections) sectionMap[s.name] = s.gid;
       log(10, `Found ${coSections.length} checkout sections: ${Object.keys(sectionMap).join(", ")}`);
