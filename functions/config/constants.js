@@ -63,6 +63,12 @@ const YACHT_ALIASES = {
   "VOYAGE 590 #18":      "It's About Time",
   "VOYAGE 590 # 18":     "It's About Time",
   "590 #18":             "It's About Time",
+  "Liv the Dream":       "Liv The Dream",
+  "Liv the dream":       "Liv The Dream",
+  "510-04":              "Liv The Dream",
+  "510 #4":              "Liv The Dream",
+  "510 4":               "Liv The Dream",
+  "VOYAGE 510 #4":       "Liv The Dream",
 };
 
 // --- Yacht Name enum GIDs (on YACHT_NAME custom field) ---
@@ -104,6 +110,11 @@ const YACHT_NAME_GIDS = {
   "It's about time":     "1220098570898529",
   "About Time":          "1220098570898529",
   "VOYAGE 590 #18":      "1220098570898529",
+  "Liv The Dream":       "1220162071658689",
+  "Liv the Dream":       "1220162071658689",
+  "510-04":              "1220162071658689",
+  "510 #4":              "1220162071658689",
+  "510 4":               "1220162071658689",
 };
 
 /**
@@ -187,6 +198,11 @@ const HK_YACHT_SECTIONS = {
   "It's about time":     "1220098570898530",
   "About Time":          "1220098570898530",
   "VOYAGE 590 #18":      "1220098570898530",
+  "Liv The Dream":       "1220162244965121",
+  "Liv the Dream":       "1220162244965121",
+  "510-04":              "1220162244965121",
+  "510 #4":              "1220162244965121",
+  "510 4":               "1220162244965121",
 };
 
 // --- Custom Field GIDs ---
@@ -396,6 +412,11 @@ const MAINTENANCE_PROJECTS = {
   "It's About Time":"1220096004337545",
   "About Time":     "1220096004337545",
   "VOYAGE 590 #18": "1220096004337545",
+  "Liv The Dream":  "1220162118866804",
+  "Liv the Dream":  "1220162118866804",
+  "510-04":         "1220162118866804",
+  "510 #4":         "1220162118866804",
+  "510 4":          "1220162118866804",
 };
 
 // --- IN/OUT Schedule Day-of-Week Sections (Flow 7) ---
@@ -482,6 +503,11 @@ const BOAT_TO_MODEL = {
   "Sail La Vie":         "VOYAGE 480",
   "Southern Cross":      "VOYAGE 510",
   "Way Maker":           "VOYAGE 510",
+  "Liv The Dream":       "VOYAGE 510",
+  "Liv the Dream":       "VOYAGE 510",
+  "510-04":              "VOYAGE 510",
+  "510 #4":              "VOYAGE 510",
+  "510 4":               "VOYAGE 510",
   "Osprey":              "VOYAGE 520",
   "No Regrets":          "VOYAGE 520",
   "Secret Oasis":        "VOYAGE 580",
@@ -552,6 +578,11 @@ const YACHT_ACRONYMS = {
   "It's about time":     "AT",
   "About Time":          "AT",
   "VOYAGE 590 #18":      "AT",
+  "Liv The Dream":       "LD",
+  "Liv the Dream":       "LD",
+  "510-04":              "LD",
+  "510 #4":              "LD",
+  "510 4":               "LD",
 };
 
 // --- Maintenance Crew Assignments ---
@@ -589,6 +620,7 @@ const SINGLE_GENSET_MODELS = new Set([
 const SINGLE_GENSET_BOATS = new Set([
   "The Drake", "Miles Away II", "Miles Away", "Decent Effort",
   "It's About Time", "It's about time", "About Time", "VOYAGE 590 #18",
+  "Liv The Dream", "Liv the Dream", "510-04", "510 #4", "510 4",
 ]);
 
 function isSingleGenset(yachtName, modelName) {

@@ -57,6 +57,11 @@ const YACHT_MAINTENANCE = {
   "It's about time":     { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
   "About Time":          { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
   "VOYAGE 590 #18":      { project: "1220096004337545", charterSection: "1220095361557816", jobs: STANDARD_JOBS_DEFAULT },
+  "Liv The Dream":       { project: "1220162118866804", charterSection: "1220162118899048", jobs: STANDARD_JOBS_DEFAULT },
+  "Liv the Dream":       { project: "1220162118866804", charterSection: "1220162118899048", jobs: STANDARD_JOBS_DEFAULT },
+  "510-04":              { project: "1220162118866804", charterSection: "1220162118899048", jobs: STANDARD_JOBS_DEFAULT },
+  "510 #4":              { project: "1220162118866804", charterSection: "1220162118899048", jobs: STANDARD_JOBS_DEFAULT },
+  "510 4":               { project: "1220162118866804", charterSection: "1220162118899048", jobs: STANDARD_JOBS_DEFAULT },
 };
 
 // ============================================================
@@ -101,6 +106,11 @@ const YACHT_STAGES = {
   "It's about time":     { A: 8, B: 4, C: 4 },
   "About Time":          { A: 8, B: 4, C: 4 },
   "VOYAGE 590 #18":      { A: 8, B: 4, C: 4 },
+  "Liv The Dream":       { A: 5, B: 2.5, C: 2.5 },
+  "Liv the Dream":       { A: 5, B: 2.5, C: 2.5 },
+  "510-04":              { A: 5, B: 2.5, C: 2.5 },
+  "510 #4":              { A: 5, B: 2.5, C: 2.5 },
+  "510 4":               { A: 5, B: 2.5, C: 2.5 },
 };
 
 // ============================================================
@@ -356,6 +366,11 @@ const YACHT_HK_PROJECTS = {
   "It's about time":     "1220096004337550",
   "About Time":          "1220096004337550",
   "VOYAGE 590 #18":      "1220096004337550",
+  "Liv The Dream":       "1220162071804525",
+  "Liv the Dream":       "1220162071804525",
+  "510-04":              "1220162071804525",
+  "510 #4":              "1220162071804525",
+  "510 4":               "1220162071804525",
 };
 
 module.exports = {
