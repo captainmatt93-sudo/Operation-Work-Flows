@@ -1,45 +1,53 @@
 # Firestore State Skill
 
 ## What This Is
-`functions/lib/firestore.js` stores per-charter provisioning state in Firestore (project `paynow-3f9dc`, default database). This replaces the legacy "bridging task notes" hack for finding which Asana projects belong to a charter.
+`functions/lib/firestore.js` stores per-charter provisioning state, operation locks, pending retry queues, and live audit telemetry in the **named Firestore database `"powerautomate"`** (`getFirestore("powerautomate")`) on project `paynow-3f9dc`. *(Reads/deletes on `provisioning_state` also check `(default)` as a legacy fallback.)*
 
 ## Critical Rules
 
-1. **Never write `undefined`.** The Admin SDK throws `Cannot use "undefined" as a Firestore value`. Coerce optional values with `|| null` before calling `saveProvisioningState`.
-2. **Doc ID is `charter-{charter_number}`.** A missing `charter_number` produces `charter-undefined` and every such charter collides on one document.
-3. **`set()` overwrites.** Re-running Create for the same charter number replaces the previous state, orphaning the first set of Asana projects (they become reachable only via legacy delete).
-4. **State is written at Create Step 11** - after the projects and bridging task exist, before maintenance/HK/IN-OUT. Delete reads it in Step 1 and removes it in Step 5.
+1. **Always use `"powerautomate"`, NOT `(default)`.** `getDb()` calls `getFirestore("powerautomate")`.
+2. **Never write `undefined`.** The Admin SDK throws `Cannot use "undefined" as a Firestore value`. Coerce optional values with `|| null` before writing.
+3. **Doc ID is `charter-{charter_number}`.** A missing `charter_number` produces `charter-undefined`.
+4. **Per-charter serialization:** `acquireOperationLock()` / `enqueueOperation()` prevent concurrent `Create`/`Edit`/`Delete` webhooks for the same charter from colliding. Locks expire after 10 minutes (`LOCK_TTL_MS`), max queue depth is `3`.
 5. **`admin.initializeApp()` is called once in `index.js`.** Do not call it again in lib modules.
 
-## `provisioning_state/charter-{charter_number}` Schema
-| Field | Type | Source |
+## Collections & Schemas
+
+### 1. `provisioning_state/charter-{charter_number}`
+| Field | Type | Source / Purpose |
 |---|---|---|
 | `charterNumber` | string | `data.charter_number` |
-| `charterName` | string | normalized charter name |
-| `charterProjectGid` | string | Step 5 duplicate |
-| `checkoutProjectGid` | string | Step 9 duplicate |
-| `bridgingTaskGid` | string | Step 10 |
-| `yachtName` | string | alias-resolved yacht name |
-| `trackingTaskGid` | string | Step 3 |
+| `charterName` | string | `"Yacht \| Client \| Start \| End"` |
+| `charterProjectGid` | string | Group A charter project GID |
+| `checkoutProjectGid` | string | Group A checkout project GID |
+| `bridgingTaskGid` | string | Group C bridging task GID |
+| `trackingTaskGid` | string | Group A `CHARTER_INFO` task GID |
+| `depTaskGid`, `arrTaskGid` | string \| null | IN/OUT `DEPARTURE` and `ARRIVAL` task GIDs |
+| `yachtName` | string | Charter yacht name (matched via `getYachtNameVariants` in `getPreviousCharter`/`getNextCharter`) |
+| `startDate`, `endDate` | string | `YYYY-MM-DD` (used for chronological `Pre`/`Post` bridging queries) |
+| `sectionMap` | map | Section name -> GID map for the checkout project |
+| `maintPayload` | map | Input payload for `executeMaintenanceFlow()` / `/maintenanceEvents` |
+| `hkPayload` | map | Input payload for `executeHousekeepingFlow()` / `/housekeepingEvents` |
 | `createdAt` | Timestamp | `FieldValue.serverTimestamp()` |
 
-If you add an artifact that Delete must remove, store its GID here and read it in `charterCleaner.js`.
+### 2. `charter_audit_log/charter-{charter_number}/events/{eventId}`
+- Powers the live Operations Dashboard (`public/`).
+- `startedAt`, `completedAt` (`null` while in-progress; stamped by `updateAuditEvent()`), `success` (`true` \| `false` \| `null`), `action`, `charterNumber`, `yachtName`, `clientName`, `startDate`, `endDate`, `charterType`, `cancelled`.
+- `stages`: nested objects for `delete`, `orchestrate`, `maint`, `hk` (`success`, `startedAtMs`, `durationMs`, `tasksCreated`, `subtasksCreated`, `error`, `errorSource`).
+- Top-level failure telemetry: `errorSource` (`"ASANA"` \| `"VALIDATION"` \| `"ORCHESTRATOR"`), `errorCode` (`"ASANA_API_ERROR"`, `"ASANA_RATE_LIMITED"`, `"VALIDATION_ERROR"`, `"INTERNAL_SERVER_ERROR"`), `error` (prefixed `[ASANA ERROR]` when upstream Asana failed), `asanaError` (structured status/method/endpoint/summary/raw errors).
+
+### 3. `operation_locks/charter-{charter_number}` & `pending_operations/charter-{charter_number}`
+- Atomic transactional lock (`action`, `auditId`, `lockedAt`) and FIFO queue array (`MAX_QUEUE_DEPTH = 3`) drained on completion or `Catch` via `processQueuedOperation()`.
 
 ## Helper Reference
-| Function | Status | Notes |
+| Function | Used In | Notes |
 |---|---|---|
-| `saveProvisioningState(charterNumber, data)` | Used (Create Step 11) | Adds `createdAt` |
-| `getProvisioningState(charterNumber)` | Used (Delete Step 1) | Returns `null` if missing |
-| `deleteProvisioningState(charterNumber)` | Used (Delete Step 5) | |
-| `getYachtConfig`, `getCharterTemplate`, `getCrewMember`, `getStandardJobs`, `getHousekeepingList` | **Unused** | Read `yacht_config`, `charter_templates`, `crew_config/*/members`, `standard_jobs`, `housekeeping_lists`. Config actually lives in `config/*.js`. Do not assume these collections are populated. |
-| `getDb()` | Used internally | |
+| `saveProvisioningState`, `getProvisioningState`, `deleteProvisioningState` | Orchestrator / Cleaner / Endpoints | Primary read on `"powerautomate"`, fallback on `(default)` |
+| `getPreviousCharter`, `getNextCharter` | Maint / HK Services & Cleaner | Queries all `C.getYachtNameVariants(yachtName)` for cross-alias chronological bridging |
+| `createAuditEvent`, `updateAuditStage`, `updateAuditEvent` | `index.js` | `updateAuditStage` keeps event in-progress; `updateAuditEvent` stamps `completedAt` |
+| `acquireOperationLock`, `releaseOperationLock`, `enqueueOperation`, `dequeueOperation`, `cancelOperation`, `clearPendingQueue` | `index.js` | Per-charter lock & queue lifecycle |
+| `getYachtConfig`, `getCharterTemplate`, `getCrewMember`, `getStandardJobs`, `getHousekeepingList` | **Unused** | Legacy config collections (runtime config lives in `config/*.js`) |
 
-## Indexes
-No composite indexes are required by the current code (all reads are by document ID). There is no `firestore.indexes.json` and no `firestore` section in `firebase.json`. If you add queries that filter + order on different fields (e.g. previous/next charter by `yachtName` + date), you must:
-1. Create `firestore.indexes.json`.
-2. Add `"firestore": { "indexes": "firestore.indexes.json" }` to `firebase.json`.
-3. Deploy indexes separately: `npx firebase deploy --only firestore:indexes`.
-Without the index the query throws `FAILED_PRECONDITION`; if it is inside a `try/catch` the feature silently does nothing.
-
-## Inspecting State
-Firebase Console -> project `paynow-3f9dc` -> Firestore -> `provisioning_state`. After a test Delete, confirm the `charter-TEST-...` document is gone.
+## Indexes (`firestore.indexes.json`)
+- Deployed via `firebase.json` (`"firestore": { "database": "powerautomate", "indexes": "firestore.indexes.json" }`).
+- Includes `COLLECTION` and `COLLECTION_GROUP` ascending/descending fieldOverrides for `events.startedAt` (used to list recent audit events across all charters).

@@ -5,36 +5,44 @@
 
 ## Critical Rules
 
-1. **Always go through `lib/asana.js`.** Do not call `fetch` to Asana from services; the wrapper handles auth, error text, and empty DELETE bodies.
-2. **Errors throw** with the message `Asana {METHOD} {path} failed ({status}): {body}`. Callers decide whether to catch. There is **no automatic retry or 429 backoff** - a rate-limit response aborts the flow.
-3. **`searchTasks(params)` passes params straight to `URLSearchParams`.** It does NOT strip `null`/`undefined`; they become the strings `"null"` / `"undefined"`. Guard values before calling:
-   ```javascript
-   if (!data.yacht_name_id) { logger.warn("No yacht_name_id - skipping search"); return; }
-   ```
-4. **Search API returns max 100 results by default and no pagination is implemented.** Large boards (Charter Info filtered only by yacht) may be truncated, affecting back-to-back detection.
-5. **Asana search is eventually consistent.** Tasks created seconds ago may not appear in `searchTasks` yet. Do not rely on search to find something created earlier in the same run - keep the GID instead.
-6. **Custom field values:** enum fields take the option GID string, number fields take numbers, date fields take `yyyy-MM-dd`. `null` clears a field; `undefined` keys are dropped by `JSON.stringify`.
-7. **The PAT has workspace-wide power.** Never log it and never commit it.
+1. **Always go through `lib/asana.js`.** Do not call `fetch` to Asana from services; the wrapper handles auth, concurrency throttling, retries, structured `AsanaApiError` formatting, and empty DELETE/204 bodies.
+2. **Structured `[ASANA ERROR]` exceptions (`AsanaApiError` & `summarizeAsanaErrorBody`):**
+   - Any non-OK Asana response (after retries) or exhausted `429` retry throws an `AsanaApiError` with message:
+     `[ASANA ERROR] (<status> <METHOD> <path>) <summary>`
+   - Properties attached to the thrown error: `isAsanaError: true`, `source: "ASANA"`, `errorCode` (`"ASANA_API_ERROR"` or `"ASANA_RATE_LIMITED"`), `asanaStatus`, `asanaMethod`, `asanaPath`, `asanaSummary`, `asanaRawErrors`.
+   - `summarizeAsanaErrorBody()` condenses Asana's verbose enum option list dumps into `Invalid Asana enum option GID "<gid>" (disabled or not valid on custom field)` while keeping raw Asana error objects in `asanaRawErrors`.
+   - Webhook handlers (`functions/index.js`) convert `AsanaApiError` into HTTP `502 ASANA Error` (`source: "ASANA"`, `error_type: "ASANA_ERROR"`, structured `asana_error`) and record it in `charter_audit_log`.
+3. **Write concurrency & automatic retry (`asanaRequest()`):**
+   - Write calls (`POST`, `PUT`, `PATCH`, `DELETE`) share a 12-slot concurrency semaphore (`WRITE_CONCURRENCY = 12`).
+   - HTTP `429` automatically respects the `Retry-After` header; transient `5xx` errors (`502`/`503`/`504`) retry with linear backoff (`attempt * 1500ms`, up to `retries = 3`).
+4. **`searchTasks(params)` strips `null` / `undefined` values** before building query params so optional filters do not leak literal `"null"`/`"undefined"` strings.
+5. **Search API returns max 100 results by default and no pagination is implemented.** Large boards (Charter Info filtered only by yacht) may be truncated, affecting back-to-back detection.
+6. **Asana search is eventually consistent.** Tasks created seconds ago may not appear in `searchTasks` yet. Do not rely on search to find something created earlier in the same run - keep the GID instead.
+7. **Custom field values:** enum fields take the option GID string, number fields take numbers, date fields take `yyyy-MM-dd`. `null` clears a field; `undefined` keys are dropped by `JSON.stringify`.
+8. **The PAT has workspace-wide power.** Never log it and never commit it.
 
 ## Function Reference
 | Function | Endpoint | Notes |
 |---|---|---|
 | `createTask(data)` | `POST /tasks` | Returns `{ data: { gid, ... } }` - use `.data.gid` |
 | `createSubtask(parentGid, data)` | `POST /tasks/{gid}/subtasks` | |
+| `createSubtasksWithWorkers(parentGid, items, workers)` | `POST /tasks/{gid}/subtasks` | Worker pool for small maintenance job lists (~3-4 items) |
+| `batchCreateSubtasks(parentGid, items)` | `POST /batch` | Batches 10 subtasks per `/batch` call with 500ms delay & 3 retries (181 HK items) |
+| `batchCreateTasksInSections(taskDefs)` | `POST /batch` | Batches 10 section tasks per call with `memberships` |
 | `updateTask(gid, data)` | `PUT /tasks/{gid}` | |
-| `deleteTask(gid)` | `DELETE /tasks/{gid}` | May return `null` |
+| `deleteTask(gid)` | `DELETE /tasks/{gid}` | May return `null` on `204` / empty body |
 | `getTask(gid, optFields)` | `GET /tasks/{gid}` | Returns `{ data }` |
-| `duplicateProject(templateGid, name)` | `POST /projects/{gid}/duplicate` + poll `GET /jobs/{gid}` | Polls every 2 s, max 60 tries (120 s). Returns `new_project` object (`.gid`). `color` param is accepted but unused - caller sets color via `updateProject`. |
-| `getProject`, `deleteProject`, `updateProject` | `/projects/{gid}` | |
-| `addProjectMember(projectGid, memberGid)` | `POST /projects/{gid}/addMembers` | `EDITOR_MEMBER` is known stale - callers wrap in try/catch |
+| `duplicateProject(templateGid, name)` | `POST /projects/{gid}/duplicate` | Asana allocates `job.new_project.gid` immediately; orchestrator polls sections asynchronously |
+| `getProject`, `deleteProject`, `updateProject` | `/projects/{gid}` | `updateProject` enforces model `CHECKOUT_COLORS` |
+| `addProjectMember(projectGid, memberGid)` | `POST /projects/{gid}/addMembers` | Wrapped in `.catch()` by callers |
 | `getProjectSections(projectGid)` | `GET /projects/{gid}/sections` | Returns array in board order |
-| `getSectionTasks(sectionGid, optFields)` | `GET /sections/{gid}/tasks` | **No pagination** - returns first page only |
+| `getSectionTasks(sectionGid, optFields)` | `GET /sections/{gid}/tasks` | Returns first page (`data` array) |
 | `addTaskToSection(sectionGid, taskGid)` | `POST /sections/{gid}/addTask` | Moves task within that project |
 | `addCustomFieldToProject`, `ensureProjectCustomFields` | `POST /projects/{gid}/addCustomFieldSetting` | `ensure...` ignores "already" errors, warns on others |
-| `searchTasks(params)` | `GET /workspaces/{ws}/tasks/search` | Returns array (`result.data`) |
+| `searchTasks(params)` | `GET /workspaces/{ws}/tasks/search` | Strips `null`/`undefined`; returns `result.data` |
 | `addTaskToProject(taskGid, projectGid)` | `POST /tasks/{gid}/addProject` | Multi-homes a task |
-| `removeTaskFromProject` | `POST /tasks/{gid}/removeProject` | Currently unused |
-| `batchCreateTasks(array)` | sequential `createTask` + 200 ms delay | Currently unused |
+| `removeTaskFromProject(taskGid, projectGid)` | `POST /tasks/{gid}/removeProject` | Used when clearing/unlinking borrowed `Pre` section tasks |
+| `AsanaApiError`, `summarizeAsanaErrorBody` | *(error class & helper)* | Thrown by `asanaRequest()` with `[ASANA ERROR]` prefix + enum dump summary |
 
 ## Return Shape Cheat Sheet
 - `createTask`, `updateTask`, `getTask` -> `{ data: {...} }` (use `.data.gid`)

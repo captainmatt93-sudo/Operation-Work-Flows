@@ -1,63 +1,42 @@
 # Charter Orchestration (Create Flow) Skill
 
 ## What This Is
-`orchestrateNewCharter(payload)` in `functions/services/charterOrchestrator.js` replaces legacy Power Automate Flows 1-7. It runs **15 sequential steps** that create every Asana artifact for a new charter. It is called from `index.js` when `data.section === "Create"`.
+`orchestrateNewCharter(payload)` in `functions/services/charterOrchestrator.js` replaces legacy Power Automate Flows 1-7 using a **3-group parallel execution pipeline (Group A -> Group B -> Group C)**. After `orchestrateNewCharter()` returns and writes `provisioning_state`, `runBackgroundMaintAndHK()` in `functions/index.js` runs Maintenance (`executeMaintenanceFlow`) followed sequentially by Housekeeping (`executeHousekeepingFlow`) in the background.
 
 ## Critical Rules
 
-1. **Steps are sequential and NOT transactional.** If a step throws, everything created before it stays in Asana. There is no rollback.
-2. **Firestore state is saved at Step 11 only.** A failure in Steps 3-10 leaves Asana artifacts that the Delete flow can only find via the legacy bridging-task search (and only if Step 10 completed). Do not move Step 11 later; consider moving it earlier when refactoring.
-3. **The flow is not idempotent.** Re-sending the same Create payload duplicates both projects and overwrites the Firestore doc (orphaning the first set). Power Automate retries will cause duplicates.
-4. **Two yacht-name variables exist.** `yachtName` (alias-resolved via `C.YACHT_ALIASES`, L40-42) is used for checkout template, maintenance, housekeeping, and Firestore. `detectBackToBack()` and the IN/OUT task names use raw `data.yacht_name`. Keep this in mind when adding aliases.
-5. **Section placement is index-based**, not name-based (see table below). If the Asana template's section order changes, tasks land in the wrong section without error.
-6. **Return contract:** `{ success: true, charterProjectGid, checkoutProjectGid, charterName }` or `{ success: false, error, brokerEmail }` (date validation only). `index.js` maps `success:false` to HTTP 400.
+1. **Group A fail-fast + rollback on template duplication:** Step 3 creates the `CHARTER_INFO` tracking task (`<1s`) *before* duplicating the Charter and Checkout templates via `Promise.allSettled`. Invalid custom-field/enum errors fail fast without creating orphan Asana project shells; if one template duplication fails, Group A deletes the tracking task and whichever project succeeded before throwing.
+2. **Canonical `C.YACHT_NAME_GIDS` precedence:** `yachtNameId` always prefers `C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht]` over caller-supplied `data.yacht_name_id` so stale/disabled CRM enum GIDs never cause Asana 400 errors.
+3. **Name-based `sectionMap` lookup (with polling):** Group A->B polls charter project sections up to 8x5s until `>= 3` named sections appear, and Group B polls checkout sections up to 6x4s until `"Post - Maintenance"` appears. Checkout color is enforced via `C.CHECKOUT_COLORS[yachtModel]` (`updateProject`).
+4. **Per-charter serialization (`operation_locks` + `pending_operations`):** `charterEvents` acquires a Firestore lock before running `orchestrateNewCharter()` and queues concurrent webhooks (`202 Queued`) for background execution via `processQueuedOperation()`.
+5. **Two yacht-name variables exist:** `resolvedYacht = C.resolveYachtName(yachtName)` is used for canonical GID/model/maint/HK lookups, while IN/OUT task titles preserve raw `data.yacht_name` or formatted `charterName`.
+6. **Return contract:** `{ success: true, charterProjectGid, checkoutProjectGid, charterName, maintPayload, hkPayload }` or `{ success: false, error, brokerEmail }` (date validation failure -> HTTP `400 Validation Error`). Thrown `AsanaApiError` exceptions bubble to `charterEvents`, stamp `charter_audit_log`, and return HTTP `502 ASANA Error`.
 
-## Step Map
-| Step | Lines | What happens | Asana / Firestore writes |
-|---|---|---|---|
-| 1 | `19-29` | `start_date > end_date` -> return failure (email is a `TODO`) | none |
-| 2 | `31-35` | Captain/Chef name -> GID via `C.CAPTAINS` / `C.CHEFS` (unknown name -> `null`) | none |
-| 3 | `37-58` | Tracking task on `BOARDS.CHARTER_INFO` with charter custom fields | 1 task |
-| 4-5 | `60-75` | `C.CHARTER_TEMPLATES[charter_type]` -> `duplicateProject` -> set color. **Unknown type throws.** | 1 project |
-| 6 | `77-87` | For up to 12 sections: create a charter-named task + `addTaskToSection(section, trackingTaskGid)` | up to 12 tasks |
-| 7 | `89-121` | `addProjectMember(EDITOR_MEMBER)` (non-fatal), update first task in `sections[2]` (Charter Info) | 1 update |
-| 8 | `123-151` | Text search Charter Info / Arrivals / Departures boards by `"charterName"` and update dates | up to 3 updates |
-| 9-10 | `153-201` | Duplicate `CHECKOUT_TEMPLATES[yachtName] || default`, attach 13 custom fields, bridging task in both projects (notes = `"checkoutGid, charterGid"`) | 1 project, 1 task |
-| 11 | `203-213` | `db.saveProvisioningState(charter_number, {...})` | Firestore doc |
-| 12 | `215-217` | `createMaintenanceTasks()` - see [Maintenance & Housekeeping](skill-maintenance-housekeeping.md) | 7 tasks + subtasks |
-| 13 | `219-221` | `createHousekeepingChecklists()` | 6 tasks + subtasks |
-| 14 | `223-225` | `createInOutSchedule()` - DEPARTURE + ARRIVAL on IN/OUT board | 2 tasks |
-| 15 | `227-229` | `detectBackToBack()` | 0-4 tasks |
+## Execution Pipeline Map
+| Stage / Group | Lines (`charterOrchestrator.js`) | What happens |
+|---|---|---|
+| Steps 1-2 & Enum Resolution | `24-61` | Date validation (`startDate > endDate` -> `400`), crew GIDs, `resolveYachtName`, canonical `yachtNameId`, `CHECKOUT_TEMPLATES[yachtModel]` |
+| **Group A** (Step 3, then 5 & 9) | `63-135` | `CHARTER_INFO` tracking task first -> Charter & Checkout template duplication via `Promise.allSettled` (with rollback) -> `>= 3` section poll |
+| **Group B** (Steps 5b-6, 8, 10a-b) | `137-271` | Create named charter section tasks (resolving `charterInfoTaskGid`), search & update `CHARTER_INFO`/`ARRIVALS`/`DEPARTURES` dates, poll checkout sections + apply `C.CHECKOUT_COLORS[yachtModel]` + add member |
+| **Group C** (Steps 7, 10c-d, 14, 15) | `273-391` | Step 7 `attach/retry` custom fields on `charterInfoTaskGid`, `Check-Out | Check-In` bridging task, Check-In/Out schedule tasks, `createInOutSchedule()`, `detectBackToBack()` |
+| Step 11 (`provisioning_state`) | `393-464` | Builds `maintPayload` & `hkPayload`, saves full state doc (`charter-{charterNumber}`) to Firestore `"powerautomate"` database |
+| Background Maint -> HK | `index.js` `74-184` | `runBackgroundMaintAndHK()` runs `executeMaintenanceFlow` then `executeHousekeepingFlow`, recording per-stage metrics and final `success`/`error`/`errorSource` in `charter_audit_log` |
 
-## Section Index Assumptions
-| Project | Index | Expected section | Used by |
-|---|---|---|---|
-| Charter project | `sections[2]` | Charter Info | Step 7 |
-| Checkout project | `coSections[0]` | Untitled (debrief tasks) | Step 15 |
-| Checkout project | `coSections[2]` | Vessel Prep Information | Step 15 |
-| Checkout project | `coSections[6]` | Post - House Keeping Info | Step 13 |
-| Checkout project | `coSections[7]` | Post - Maintenance Info | Step 12 |
+## IN/OUT Schedule (Step 14, `L470-564`)
+- `DEPARTURE` task: `due_on = start_date`, type `IN_OUT_DEPARTURE`, name `"{client} | {yacht} | {boarding display} | - DEPARTURE"`.
+- Searches IN/OUT board for same-yacht `DEPARTURE` tasks within `+/-30` days of `end_date`; nearest future one sets `TURNAROUND_DAYS`.
+- `ARRIVAL` task: `due_on = end_date`; type `IN_OUT_ARRIVAL_ALT` if turnaround `<= 1` day, else `IN_OUT_ARRIVAL`.
+- Day-of-week section placement uses `data.start_day_name` / `data.end_day_name` -> `C.DAY_SECTIONS`.
 
-Each lookup is guarded by a `length > N` check, so a shorter template **skips placement silently** rather than failing.
-
-## IN/OUT Schedule (Step 14, L244-322)
-- DEPARTURE task: `due_on = start_date`, type `IN_OUT_DEPARTURE`, name `"{client} | {yacht} | {boarding display} | - DEPARTURE"`.
-- Searches IN/OUT board for same-yacht DEPARTURE tasks within +/-30 days of `end_date`; nearest future one gives `TURNAROUND_DAYS`.
-- ARRIVAL task: `due_on = end_date`; type `IN_OUT_ARRIVAL_ALT` if turnaround <= 1 day, else `IN_OUT_ARRIVAL`.
-- Day-of-week section placement uses `data.start_day_name` / `data.end_day_name` from `normalizePayload()` -> `C.DAY_SECTIONS`. These names come from the unreliable `DAY_GID_TO_NAME` map (see [Known Issues](skill-known-issues.md)).
-- The search filters by `data.yacht_name_id`. If that is missing, `URLSearchParams` sends `"undefined"`.
-
-## Back-to-Back Detection (Step 15, L329-415)
-- Searches `BOARDS.CHARTER_INFO` for tasks with the same `YACHT_NAME` enum, excluding the current `charterName`.
-- Closest previous charter (its `due_on` -> current `start_date`) and next charter (current `end_date` -> its `start_on`).
-- Gap <= 7 days: "Previous/Next Charter Scheduled - {name}" in Vessel Prep section.
-- Previous gap <= 3 days: "Pass on {yacht}   {prevClient} Debrief" + "Get Debrief {charterName}" in Untitled section. (Note the three spaces in the name - existing Asana convention; do not "fix" without checking downstream rules.)
-- Client name is parsed from the charter name pattern `"Yacht | Client | Start | End"` - keep that format.
+## Back-to-Back Detection (Step 15, `L570-684`)
+- Searches `BOARDS.CHARTER_INFO` for tasks with the same `YACHT_NAME` enum (`yachtNameId`), excluding `charterName`.
+- Gap `<= 7` days: creates `"Previous/Next Charter Scheduled - {name}"` in `Vessel Prep Information`.
+- Previous gap `<= 3` days: creates `"Pass on {yacht}   {prevClient} Debrief"` + `"Get Debrief {charterName}"` in the top checkout section (preserve triple spaces).
+- Client name is parsed from `"Yacht | Client | Start | End"` — keep that exact format.
 
 ## Adding a New Step
 1. Add it as a named async helper below `orchestrateNewCharter()`, not inline.
 2. Call it with `log(N, "...")` so Cloud Logging shows `[Step N]`.
 3. Coerce every optional value with `|| null` before passing to Asana custom fields or Firestore.
-4. Wrap non-critical calls in `try/catch` + `logger.warn` (pattern used for `addProjectMember`). Let critical calls throw.
-5. If the step creates artifacts, make sure [Charter Cleanup](skill-charter-cleanup.md) deletes them (store the GID in provisioning state or tag it with `CHARTER_NUMBER`).
-6. Update the jump table in `README.md` if line ranges shift.
+4. Store any created GIDs in `db.saveProvisioningState()` so `charterCleaner.js` deletes them cleanly on `Edit`/`Delete`.
+5. Update `.agent-skills/README.md` jump tables if line ranges shift significantly.

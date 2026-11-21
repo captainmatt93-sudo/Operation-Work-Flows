@@ -1,46 +1,47 @@
 # Maintenance & Housekeeping Provisioning Skill
 
 ## What This Is
-Steps 12 and 13 of the Create flow (`charterOrchestrator.js` L422-585) populate the new checkout project with maintenance and housekeeping work, driven by the static config in `functions/config/maintenance.js` and `FIXED_MAINT_TASKS` in `constants.js`.
+Standalone Maintenance (`functions/services/maintenanceService.js` -> `executeMaintenanceFlow()`) and Housekeeping (`functions/services/housekeepingService.js` -> `executeHousekeepingFlow()`) services run sequentially in the background after `orchestrateNewCharter()`, and can also be invoked standalone via `/maintenanceEvents` and `/housekeepingEvents`. Both are driven by `functions/config/maintenance.js` (`M`) and `functions/config/constants.js` (`C`).
 
 ## Critical Rules
 
-1. **Lookups use the alias-resolved `yachtName`** (e.g. `"Miles Away II"` -> `"Miles Away"`). Keys must match exactly, including apostrophes: `"Busy B's"`, `"5 O'Clock Somewhere"`.
-2. **A missing yacht is a silent skip.** No `YACHT_MAINTENANCE` entry -> `logger.warn` + no maintenance tasks. No `YACHT_STAGES` entry -> no housekeeping tasks. The request still returns 200.
-3. **Source of truth for maintenance project GIDs is `M.YACHT_MAINTENANCE[yacht].project`.** `C.MAINTENANCE_PROJECTS` in `constants.js` is unused and its GIDs do not line up with `maintenance.js` - do not use it.
-4. **Subtask creation is throttled** with a 150 ms delay. Keep it. A full run creates roughly 7 maintenance tasks + subtasks and 6 HK parents + ~200 subtasks.
+1. **Alias resolution + canonical `yachtNameId` precedence:** Both services normalize incoming `yachtName` via `C.resolveYachtName(yachtName)` and always prefer `C.YACHT_NAME_GIDS` over any stale `rawYachtNameId` saved in `maintPayload` / `hkPayload`.
+2. **A missing yacht skips cleanly:** Missing `maintProjectGid` -> `{ success: false, error: "No maintenance project configured" }`. Missing `stageHours` -> `{ success: false, error: "No housekeeping stage config" }`. Both are recorded onto `charter_audit_log` by `runBackgroundMaintAndHK()`.
+3. **Source of truth for maintenance project GIDs is `M.YACHT_MAINTENANCE[yacht].project`.** `C.MAINTENANCE_PROJECTS` in `constants.js` is legacy - do not use it.
+4. **Live section fallback & Turn Around Jobs matching:** If `maintSectionGid` or `hkSectionGid` wasn't captured during initial Checkout duplication, both services fetch Checkout sections live and match `Post - Maintenance` / `Post - House`. `Turn Around Jobs` sections are matched case-insensitively (`s.name.trim().toLowerCase() === "turn around jobs"`).
+5. **Subtask creation:** Maintenance uses `asana.createSubtasksWithWorkers(gid, list, 3)` (~3-4 jobs). Housekeeping uses `asana.batchCreateSubtasks()` (181 items across 6 stages, batched 10 per `/batch` call with 500ms delay).
 
-## Step 12 - `createMaintenanceTasks()` (L422-507)
-1. Reads `{ project, jobs, charterSection }` from `M.YACHT_MAINTENANCE[yachtName]`.
-2. Target section: checkout `coSections[7]` ("Post - Maintenance Info").
-3. Creates each of the 6 `C.FIXED_MAINT_TASKS`:
-   - `assignee`: the fixed crew GID, or the captain GID when `assignee: null` (`@System Check`).
-   - Common fields: Priority High, Type Preventative, Yacht Name, Charter Number, Total Time 0, plus Department and Hours.
-   - `due_on = end_date`; placed in section 7; multi-homed into the yacht's maintenance project via `addTaskToProject`.
-4. Creates `@Standard Jobs` (assigned to captain, Dept General) and one subtask per entry in `jobs`.
-5. If `charterSection` is truthy, creates a charter-named task on `BOARDS.YACHT_SCHEDULE`. (Note: `charterSection` is only used as a flag; the task is not placed into that section.)
+## `executeMaintenanceFlow()` (`functions/services/maintenanceService.js` L33-280)
+1. Determines genset type via `C.getFixedMaintTasks(yachtName, yachtModel)`:
+   - **Dual Genset (`7` fixed + `Standard Jobs` = `8` Checkout tasks):** `FIXED_MAINT_TASKS_DUAL` (*Service port genset*, *Service stb genset*, *Wash port and stb engine rooms*, *Clean Genset Engine strainers*, *Port and stb engine checks*, *Systems check*, *Rigging check and lubrication*).
+   - **Single Genset (`6` fixed + `Standard Jobs` = `7` Checkout tasks):** `FIXED_MAINT_TASKS_SINGLE` (models `VOYAGE 480`/`480e`, `510`/`510e`, `520` plus `SINGLE_GENSET_BOATS`: `The Drake`, `Miles Away II`, `Decent Effort`, `It's About Time`, `Liv The Dream`).
+2. Looks up `BOARDS.MECHANICAL_PROJECT` (`"Service Due..."`), `maintProjectGid` (`"Turn Around Jobs"`), and live Checkout `Post - Maintenance` fallback concurrently.
+3. Creates fixed tasks concurrently with multi-project memberships (Evergreen Maint Project `Turn Around Jobs` + Checkout `Post - Maintenance Info` + `MECHANICAL_PROJECT` for Mech tasks) and `due_on = endDate`.
+4. Creates `Standard Jobs` + subtasks via `createSubtasksWithWorkers()`.
+5. If `charterSection` is set, creates a charter-named tracking task on `BOARDS.YACHT_SCHEDULE` (total `tasksCreated`: **9** dual-genset / **8** single-genset).
+6. **Steps 7a + 7b (Bidirectional `Pre`/`Post` Bridge):** Concurrently pulls previous charter's `Post - Maintenance` tasks -> current `Pre - Maintenance` (via `db.getPreviousCharter`), and clears + pushes current tasks -> next charter's `Pre - Maintenance` (via `db.getNextCharter`).
 
-## Step 13 - `createHousekeepingChecklists()` (L514-585)
-1. Reads `{ A, B, C }` hours from `M.YACHT_STAGES[yachtName]`.
-2. Target section: checkout `coSections[6]` ("Post - House Keeping Info").
-3. Acronym: `C.YACHT_ACRONYMS[yachtName]` or first 3 chars of the name.
-4. Creates 6 parent tasks: Interior A/B/C, Exterior A/B/C, named `"{acronym} | {clientShort}, {Interior|Exterior} {A|B|C}"`.
-5. Custom fields: Prescribed Time (hours), Cleaning Stage enum, Int/Ext enum, Yacht Name, Charter Number, Pay (`hours * 18.75`), Yacht Model (`data.yacht_model_id || null`).
-6. One subtask per checklist line from `M.HOUSEKEEPING_LISTS`.
-7. Notes: `"{checkoutGid} | {charterName} | {boarding_time} | {charter_number}"` - see Known Issues: `boarding_time` is usually an object here.
+## `executeHousekeepingFlow()` (`functions/services/housekeepingService.js` L31-267)
+1. Resolves `stageHours` (`M.YACHT_STAGES`), `acronym` (`C.YACHT_ACRONYMS`), `hkProjectGid` (`M.YACHT_HK_PROJECTS`), and `yachtScheduleSection` (`C.HK_YACHT_SECTIONS`).
+2. Looks up `Turn Around Jobs` on `hkProjectGid` and live Checkout `Post - House` fallback concurrently.
+3. Builds 6 stage configs (`Interior A/B/C`, `Exterior A/B/C`, `181` total subtasks across `M.HOUSEKEEPING_LISTS`), creates all 6 parent tasks concurrently (`{acronym} | {clientShort}, {Interior|Exterior} {A|B|C}`) across `HK_YACHT_SCHEDULE`, Checkout `Post - House Keeping Info`, `HK_STAGE_PROJECT`, and `hkProjectGid` (`Turn Around Jobs`). Note: Cloned HK projects may also run native Asana Rules moving tasks into `STAGE A`/`B`/`C` sections.
+4. Populates the 181 checklist subtasks via `asana.batchCreateSubtasks()`.
+5. **Steps 7a + 7b (Bidirectional `Pre`/`Post` Bridge):** Concurrently links previous charter's `Post - House` tasks -> current `Pre - House-Keeping Info` and clears + links current 6 tasks -> next charter's `Pre - House-Keeping Info`.
 
 ## Yacht Coverage Matrix (keep in sync)
-A yacht needs entries in several maps to be fully provisioned:
+A yacht needs entries in every map below to be fully provisioned:
 
 | Map | File | Missing entry effect |
 |---|---|---|
-| `YACHT_MAINTENANCE` | maintenance.js | No maintenance tasks, no Yacht Schedule task |
-| `YACHT_STAGES` | maintenance.js | No housekeeping tasks |
-| `YACHT_ACRONYMS` | constants.js | HK task names use first 3 letters |
-| `CHECKOUT_TEMPLATES` | constants.js | Falls back to `default` template |
-| `YACHT_ALIASES` | constants.js | Only needed if the external name differs |
-
-Known gaps today: `"Out Of Office"` has stages but no maintenance entry or acronym; `"Electrified"` has maintenance but no stages.
+| `YACHT_NAME_GIDS` | `constants.js` | Missing/wrong `Yacht Name` enum on Tracking, Charter Info, Maint & HK tasks |
+| `YACHT_ALIASES` | `constants.js` | External CRM name variants don't resolve to canonical maps or multi-variant queries |
+| `BOAT_TO_MODEL` | `constants.js` | No model-specific Checkout template, `CHECKOUT_COLORS`, or `Yacht Model` custom field |
+| `YACHT_ACRONYMS` | `constants.js` | Schedule & HK task names use first 3 letters |
+| `SINGLE_GENSET_BOATS` | `constants.js` | 590/580 boat defaults to dual genset (`Service port/stb genset`) unless listed here |
+| `YACHT_MAINTENANCE` | `maintenance.js` | Maintenance flow returns `{ success: false, error: "No maintenance project configured" }` |
+| `YACHT_STAGES` | `maintenance.js` | Housekeeping flow returns `{ success: false, error: "No housekeeping stage config" }` |
+| `YACHT_HK_PROJECTS` | `maintenance.js` | HK tasks are still created on Checkout/Master boards, but not added to vessel HK project |
+| `HK_YACHT_SECTIONS` | `constants.js` | HK tasks land on `HK_YACHT_SCHEDULE` without a vessel section |
 
 ## How To Add a New Yacht
 1. Get the yacht's maintenance project GID and (optional) Yacht Schedule section GID from Asana.
