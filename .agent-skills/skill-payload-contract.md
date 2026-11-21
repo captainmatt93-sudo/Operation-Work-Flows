@@ -14,10 +14,11 @@ Body:     { "data": { "section": "Create" | "Delete" | "Edit", ...fields } }
 |---|---|
 | `405` | Not POST |
 | `401` | `x-api-key` missing/wrong, **or** `WEBHOOK_API_KEY` env var not set on the function |
-| `400` | No `data`, unknown `section`, or Create date validation failed |
-| `200 { Status, charterProjectGid, checkoutProjectGid }` | Create succeeded |
-| `200 { Status, success }` | Delete / Edit finished (may include swallowed warnings) |
-| `500 { error }` | Any thrown error (e.g. unknown `charter_type`, Asana failure) |
+| `400 { Status: "400 Validation Error", success: false, source: "VALIDATION", error_type: "VALIDATION_ERROR", error, message }` | Missing required field, unknown `section`, or Create/Edit date validation failure (no `data` also returns `400`) |
+| `200 { Status, charterProjectGid, checkoutProjectGid }` | Create / Edit succeeded |
+| `200 { Status, success }` | Delete finished (may include swallowed warnings) |
+| `502 { Status: "502 ASANA Error", success: false, source: "ASANA", error_type: "ASANA_ERROR", error_code, error, message, asana_error }` | Upstream Asana API error (`4xx`/`5xx`/`429` after retries); `error` is prefixed with `[ASANA ERROR]` and condenses verbose enum dumps |
+| `500 { Status: "500 Internal Error", success: false, source: "ORCHESTRATOR", error_type: "INTERNAL_ERROR", error_code, error, message }` | Internal orchestrator error (non-Asana exception) |
 
 Function options: region `us-east4`, `timeoutSeconds: 540`, `memory: 512MiB`. A full Create typically makes 250+ Asana calls; keep the timeout high.
 

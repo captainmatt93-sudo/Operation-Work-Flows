@@ -13,6 +13,175 @@ const { createAuditEvent, updateAuditStage, updateAuditEvent,
         acquireOperationLock, releaseOperationLock, enqueueOperation, dequeueOperation,
         cancelOperation, clearPendingQueue } = db;
 
+function buildErrorResponse(err, { action = null, charterNumber = null } = {}) {
+  const rawMsg = err?.message || "Internal server error";
+  const isAsana = Boolean(
+    err?.isAsanaError || /^(\[ASANA ERROR\]|Asana\s+(GET|POST|PUT|DELETE|PATCH))/i.test(rawMsg)
+  );
+  const errorMessage = isAsana
+    ? (rawMsg.startsWith("[ASANA ERROR]") ? rawMsg : `[ASANA ERROR] ${rawMsg}`)
+    : rawMsg;
+  const httpStatus = isAsana ? 502 : 500;
+  const errorCode = err?.errorCode || (isAsana ? "ASANA_API_ERROR" : "INTERNAL_SERVER_ERROR");
+
+  return {
+    httpStatus,
+    isAsana,
+    errorMessage,
+    body: {
+      Status: isAsana ? `${httpStatus} ASANA Error` : `${httpStatus} Internal Error`,
+      success: false,
+      source: isAsana ? "ASANA" : "ORCHESTRATOR",
+      error_type: isAsana ? "ASANA_ERROR" : "INTERNAL_ERROR",
+      error_code: errorCode,
+      error: errorMessage,
+      message: errorMessage,
+      ...(charterNumber ? { charter_number: charterNumber } : {}),
+      ...(action ? { action } : {}),
+      ...(isAsana
+        ? {
+            asana_error: {
+              status: err.asanaStatus || null,
+              method: err.asanaMethod || null,
+              endpoint: err.asanaPath || null,
+              summary: err.asanaSummary || errorMessage,
+              errors: err.asanaRawErrors || null,
+            },
+          }
+        : {}),
+    },
+  };
+}
+
+function buildValidationErrorBody(message, { action = null, charterNumber = null } = {}) {
+  return {
+    Status: "400 Validation Error",
+    success: false,
+    source: "VALIDATION",
+    error_type: "VALIDATION_ERROR",
+    error_code: "VALIDATION_ERROR",
+    error: message,
+    message,
+    ...(charterNumber ? { charter_number: charterNumber } : {}),
+    ...(action ? { action } : {}),
+  };
+}
+
+/**
+ * Run Maint then HK sequentially in the background and update charter_audit_log.
+ * Tracks ASANA vs ORCHESTRATOR failures so partial background runs are never stamped success=true.
+ */
+function runBackgroundMaintAndHK({ charterNumber, auditId, action, maintPayload, hkPayload }) {
+  ;(async () => {
+    let maintOk = true;
+    let hkOk = true;
+    const bgErrors = [];
+    let bgErrorSource = null;
+
+    // ── Maint first ──
+    const tMaint = Date.now();
+    if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { startedAtMs: tMaint } }).catch(() => {});
+    try {
+      const r = await executeMaintenanceFlow(maintPayload);
+      if (!r.success) {
+        maintOk = false;
+        if (r.error) bgErrors.push(`Maint: ${r.error}`);
+        if (!bgErrorSource) bgErrorSource = "ORCHESTRATOR";
+      }
+      if (auditId) {
+        await updateAuditStage(charterNumber, auditId, {
+          "stages.maint": {
+            success: r.success,
+            startedAtMs: tMaint,
+            durationMs: Date.now() - tMaint,
+            tasksCreated: r.tasksCreated,
+            subtasksCreated: r.subtasksCreated,
+            ...(r.error ? { error: r.error, errorSource: "ORCHESTRATOR" } : {}),
+          },
+        }).catch(() => {});
+      }
+    } catch (err) {
+      const errInfo = buildErrorResponse(err, { action, charterNumber });
+      maintOk = false;
+      bgErrors.push(`Maint: ${errInfo.errorMessage}`);
+      if (errInfo.body.source === "ASANA" || !bgErrorSource) bgErrorSource = errInfo.body.source;
+      logger.error(`[BG] Maint failed for ${charterNumber}: ${errInfo.errorMessage}`, {
+        source: errInfo.body.source,
+        errorCode: errInfo.body.error_code,
+        asanaError: errInfo.body.asana_error || null,
+      });
+      if (auditId) {
+        await updateAuditStage(charterNumber, auditId, {
+          "stages.maint": {
+            success: false,
+            startedAtMs: tMaint,
+            durationMs: Date.now() - tMaint,
+            errorSource: errInfo.body.source,
+            error: errInfo.errorMessage,
+          },
+        }).catch(() => {});
+      }
+    }
+
+    // ── HK second ──
+    const tHk = Date.now();
+    if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { startedAtMs: tHk } }).catch(() => {});
+    try {
+      const r = await executeHousekeepingFlow(hkPayload);
+      if (!r.success) {
+        hkOk = false;
+        if (r.error) bgErrors.push(`HK: ${r.error}`);
+        if (!bgErrorSource) bgErrorSource = "ORCHESTRATOR";
+      }
+      if (auditId) {
+        await updateAuditStage(charterNumber, auditId, {
+          "stages.hk": {
+            success: r.success,
+            startedAtMs: tHk,
+            durationMs: Date.now() - tHk,
+            tasksCreated: r.tasksCreated,
+            subtasksCreated: r.subtasksCreated,
+            ...(r.error ? { error: r.error, errorSource: "ORCHESTRATOR" } : {}),
+          },
+        }).catch(() => {});
+      }
+    } catch (err) {
+      const errInfo = buildErrorResponse(err, { action, charterNumber });
+      hkOk = false;
+      bgErrors.push(`HK: ${errInfo.errorMessage}`);
+      if (errInfo.body.source === "ASANA" || !bgErrorSource) bgErrorSource = errInfo.body.source;
+      logger.error(`[BG] HK failed for ${charterNumber}: ${errInfo.errorMessage}`, {
+        source: errInfo.body.source,
+        errorCode: errInfo.body.error_code,
+        asanaError: errInfo.body.asana_error || null,
+      });
+      if (auditId) {
+        await updateAuditStage(charterNumber, auditId, {
+          "stages.hk": {
+            success: false,
+            startedAtMs: tHk,
+            durationMs: Date.now() - tHk,
+            errorSource: errInfo.body.source,
+            error: errInfo.errorMessage,
+          },
+        }).catch(() => {});
+      }
+    }
+
+    // ── Final completion — stamps completedAt ──
+    if (auditId) {
+      await updateAuditEvent(charterNumber, auditId, {
+        success: maintOk && hkOk,
+        ...(bgErrors.length ? { error: bgErrors.join(" | "), errorSource: bgErrorSource || "ORCHESTRATOR" } : {}),
+      }).catch(() => {});
+    }
+
+    // ── Release lock + pick up queued operation ──
+    await releaseOperationLock(charterNumber).catch(() => {});
+    processQueuedOperation(charterNumber);
+  })();
+}
+
 /**
  * Fire Maint + HK concurrently in the background (no await).
  * Cloud Run container stays alive while these Promises are pending.
@@ -252,7 +421,7 @@ exports.charterEvents = onRequest(
           const valErr = validateRequired(data, true);
           if (valErr) {
             await releaseOperationLock(charterNumber).catch(() => {});
-            return res.status(400).json({ error: valErr });
+            return res.status(400).json(buildValidationErrorBody(valErr, { action, charterNumber }));
           }
 
           auditId = await createAuditEvent(charterNumber, {
@@ -269,10 +438,19 @@ exports.charterEvents = onRequest(
           const t0 = Date.now();
           const result = await orchestrateNewCharter({ data });
           if (!result.success) {
-            if (auditId) await updateAuditEvent(charterNumber, auditId, { success: false, error: result.error, stages: { orchestrate: { success: false } } }).catch(() => {});
+            const valMsg = result.error || "Charter creation failed";
+            if (auditId) {
+              await updateAuditEvent(charterNumber, auditId, {
+                success: false,
+                errorSource: "VALIDATION",
+                errorCode: "VALIDATION_ERROR",
+                error: valMsg,
+                stages: { orchestrate: { success: false } },
+              }).catch(() => {});
+            }
             await releaseOperationLock(charterNumber).catch(() => {});
             processQueuedOperation(charterNumber);
-            return res.status(400).json({ error: result.error || "Charter creation failed" });
+            return res.status(400).json(buildValidationErrorBody(valMsg, { action, charterNumber }));
           }
 
           const orchMs = Date.now() - t0;
@@ -284,38 +462,13 @@ exports.charterEvents = onRequest(
 
           // Fire Maint then HK sequentially in the background
           // updateAuditStage = no completedAt, updateAuditEvent = final stamp
-          ;(() => {
-            (async () => {
-              // ── Maint first ──
-              const tMaint = Date.now();
-              if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { startedAtMs: tMaint } }).catch(() => {});
-              try {
-                const r = await executeMaintenanceFlow(result.maintPayload);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { success: r.success, startedAtMs: tMaint, durationMs: Date.now() - tMaint, tasksCreated: r.tasksCreated, subtasksCreated: r.subtasksCreated, ...(r.error ? { error: r.error } : {}) } }).catch(() => {});
-              } catch (err) {
-                logger.error(`[BG] Maint failed for ${charterNumber}: ${err.message}`);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { success: false, startedAtMs: tMaint, error: err.message } }).catch(() => {});
-              }
-
-              // ── HK second ──
-              const tHk = Date.now();
-              if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { startedAtMs: tHk } }).catch(() => {});
-              try {
-                const r = await executeHousekeepingFlow(result.hkPayload);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { success: r.success, startedAtMs: tHk, durationMs: Date.now() - tHk, tasksCreated: r.tasksCreated, subtasksCreated: r.subtasksCreated, ...(r.error ? { error: r.error } : {}) } }).catch(() => {});
-              } catch (err) {
-                logger.error(`[BG] HK failed for ${charterNumber}: ${err.message}`);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { success: false, startedAtMs: tHk, error: err.message } }).catch(() => {});
-              }
-
-              // ── Final completion — stamps completedAt ──
-              if (auditId) await updateAuditEvent(charterNumber, auditId, { success: true }).catch(() => {});
-
-              // ── Release lock + pick up queued operation ──
-              await releaseOperationLock(charterNumber).catch(() => {});
-              processQueuedOperation(charterNumber);
-            })();
-          })();
+          runBackgroundMaintAndHK({
+            charterNumber,
+            auditId,
+            action,
+            maintPayload: result.maintPayload,
+            hkPayload: result.hkPayload,
+          });
 
           return res.status(200).json({
             Status: "200 Success",
@@ -328,7 +481,7 @@ exports.charterEvents = onRequest(
           const valErr = validateRequired(data);
           if (valErr) {
             await releaseOperationLock(charterNumber).catch(() => {});
-            return res.status(400).json({ error: valErr });
+            return res.status(400).json(buildValidationErrorBody(valErr, { action, charterNumber }));
           }
 
           auditId = await createAuditEvent(charterNumber, {
@@ -363,7 +516,7 @@ exports.charterEvents = onRequest(
           const valErr = validateRequired(data, true);
           if (valErr) {
             await releaseOperationLock(charterNumber).catch(() => {});
-            return res.status(400).json({ error: valErr });
+            return res.status(400).json(buildValidationErrorBody(valErr, { action, charterNumber }));
           }
 
           auditId = await createAuditEvent(charterNumber, {
@@ -398,10 +551,19 @@ exports.charterEvents = onRequest(
 
           const result = await orchestrateNewCharter({ data });
           if (!result.success) {
-            if (auditId) await updateAuditEvent(charterNumber, auditId, { success: false, error: result.error }).catch(() => {});
+            const valMsg = result.error || "Charter recreation failed after deletion";
+            if (auditId) {
+              await updateAuditEvent(charterNumber, auditId, {
+                success: false,
+                errorSource: "VALIDATION",
+                errorCode: "VALIDATION_ERROR",
+                error: valMsg,
+                "stages.orchestrate": { success: false },
+              }).catch(() => {});
+            }
             await releaseOperationLock(charterNumber).catch(() => {});
             processQueuedOperation(charterNumber);
-            return res.status(400).json({ error: result.error || "Charter recreation failed after deletion" });
+            return res.status(400).json(buildValidationErrorBody(valMsg, { action, charterNumber }));
           }
 
           const orchMs = Date.now() - t0;
@@ -412,35 +574,13 @@ exports.charterEvents = onRequest(
           }).catch(() => {});
 
           // Maint then HK sequentially in background
-          ;(() => {
-            (async () => {
-              const tMaint = Date.now();
-              if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { startedAtMs: tMaint } }).catch(() => {});
-              try {
-                const r = await executeMaintenanceFlow(result.maintPayload);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { success: r.success, startedAtMs: tMaint, durationMs: Date.now() - tMaint, tasksCreated: r.tasksCreated, subtasksCreated: r.subtasksCreated, ...(r.error ? { error: r.error } : {}) } }).catch(() => {});
-              } catch (err) {
-                logger.error(`[BG] Maint failed for ${charterNumber}: ${err.message}`);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.maint": { success: false, startedAtMs: tMaint, error: err.message } }).catch(() => {});
-              }
-
-              const tHk = Date.now();
-              if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { startedAtMs: tHk } }).catch(() => {});
-              try {
-                const r = await executeHousekeepingFlow(result.hkPayload);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { success: r.success, startedAtMs: tHk, durationMs: Date.now() - tHk, tasksCreated: r.tasksCreated, subtasksCreated: r.subtasksCreated, ...(r.error ? { error: r.error } : {}) } }).catch(() => {});
-              } catch (err) {
-                logger.error(`[BG] HK failed for ${charterNumber}: ${err.message}`);
-                if (auditId) await updateAuditStage(charterNumber, auditId, { "stages.hk": { success: false, startedAtMs: tHk, error: err.message } }).catch(() => {});
-              }
-
-              if (auditId) await updateAuditEvent(charterNumber, auditId, { success: true }).catch(() => {});
-
-              // ── Release lock + pick up queued operation ──
-              await releaseOperationLock(charterNumber).catch(() => {});
-              processQueuedOperation(charterNumber);
-            })();
-          })();
+          runBackgroundMaintAndHK({
+            charterNumber,
+            auditId,
+            action,
+            maintPayload: result.maintPayload,
+            hkPayload: result.hkPayload,
+          });
 
           return res.status(200).json({
             Status: "200 Success",
@@ -452,7 +592,7 @@ exports.charterEvents = onRequest(
         case "Cancel": {
           if (!charterNumber) {
             await releaseOperationLock(charterNumber).catch(() => {});
-            return res.status(400).json({ error: "Missing charter_number" });
+            return res.status(400).json(buildValidationErrorBody("Missing charter_number", { action }));
           }
 
           logger.info(`[CANCEL] Cancelling operation for ${charterNumber}`);
@@ -470,23 +610,36 @@ exports.charterEvents = onRequest(
           });
         }
 
-        default:
-          logger.error(`Unknown action: ${action}`);
+        default: {
+          const unknownMsg = `Unknown action: ${action}`;
+          logger.error(unknownMsg);
           await releaseOperationLock(charterNumber).catch(() => {});
-          return res.status(400).json({ error: `Unknown action: ${action}` });
+          return res.status(400).json(buildValidationErrorBody(unknownMsg, { action, charterNumber }));
+        }
       }
     } catch (err) {
-      logger.error(`Orchestration failed [${action}]: ${err.message}`, { stack: err.stack });
+      const errInfo = buildErrorResponse(err, { action, charterNumber });
+      logger.error(`Orchestration failed [${action}]: ${errInfo.errorMessage}`, {
+        source: errInfo.body.source,
+        errorCode: errInfo.body.error_code,
+        charterNumber,
+        action,
+        asanaError: errInfo.body.asana_error || null,
+        stack: err.stack,
+      });
       if (auditId) {
         await updateAuditEvent(charterNumber, auditId, {
           success: false,
-          error: err.message,
+          errorSource: errInfo.body.source,
+          errorCode: errInfo.body.error_code,
+          error: errInfo.errorMessage,
+          ...(errInfo.body.asana_error ? { asanaError: errInfo.body.asana_error } : {}),
         }).catch(() => {});
       }
       // Release lock on error so queued ops aren't stuck
       await releaseOperationLock(charterNumber).catch(() => {});
       processQueuedOperation(charterNumber);
-      return res.status(500).json({ error: err.message || "Internal server error" });
+      return res.status(errInfo.httpStatus).json(errInfo.body);
     }
   }
 );
@@ -539,8 +692,14 @@ exports.maintenanceEvents = onRequest(
         ...result,
       });
     } catch (err) {
-      logger.error(`Maintenance failed: ${err.message}`, { stack: err.stack });
-      return res.status(500).json({ error: err.message });
+      const errInfo = buildErrorResponse(err, { action: "Maintenance", charterNumber });
+      logger.error(`Maintenance failed for ${charterNumber}: ${errInfo.errorMessage}`, {
+        source: errInfo.body.source,
+        errorCode: errInfo.body.error_code,
+        asanaError: errInfo.body.asana_error || null,
+        stack: err.stack,
+      });
+      return res.status(errInfo.httpStatus).json(errInfo.body);
     }
   }
 );
@@ -592,8 +751,14 @@ exports.housekeepingEvents = onRequest(
         ...result,
       });
     } catch (err) {
-      logger.error(`Housekeeping failed: ${err.message}`, { stack: err.stack });
-      return res.status(500).json({ error: err.message });
+      const errInfo = buildErrorResponse(err, { action: "Housekeeping", charterNumber });
+      logger.error(`Housekeeping failed for ${charterNumber}: ${errInfo.errorMessage}`, {
+        source: errInfo.body.source,
+        errorCode: errInfo.body.error_code,
+        asanaError: errInfo.body.asana_error || null,
+        stack: err.stack,
+      });
+      return res.status(errInfo.httpStatus).json(errInfo.body);
     }
   }
 );

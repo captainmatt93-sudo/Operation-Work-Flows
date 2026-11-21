@@ -5,6 +5,50 @@ const { ASANA_WORKSPACE } = require("../config/constants");
 
 const BASE_URL = "https://app.asana.com/api/1.0";
 
+function summarizeAsanaErrorBody(rawText) {
+  const trimmed = String(rawText || "").trim();
+  if (!trimmed) return { summary: "Unknown Asana API error", rawErrors: null };
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed?.errors) && parsed.errors.length > 0) {
+      const summaries = parsed.errors.map((item) => {
+        const msg = String(item?.message || "").trim();
+        const enumMatch = msg.match(
+          /Enum value for this property must be one of \{[\s\S]*?\},\s*not:\s*([^\s"}]+)/i
+        );
+        if (enumMatch) {
+          return `Invalid Asana enum option GID "${enumMatch[1]}" (disabled or not valid on custom field)`;
+        }
+        return msg || JSON.stringify(item);
+      });
+      return {
+        summary: summaries.join("; "),
+        rawErrors: parsed.errors,
+      };
+    }
+  } catch {
+    // Non-JSON response body — fall back to trimmed plain text
+  }
+
+  return { summary: trimmed, rawErrors: null };
+}
+
+class AsanaApiError extends Error {
+  constructor({ method, path, status, summary, rawErrors = null }) {
+    super(`[ASANA ERROR] (${status} ${method} ${path}) ${summary}`);
+    this.name = "AsanaApiError";
+    this.isAsanaError = true;
+    this.source = "ASANA";
+    this.errorCode = status === 429 ? "ASANA_RATE_LIMITED" : "ASANA_API_ERROR";
+    this.asanaStatus = status;
+    this.asanaMethod = method;
+    this.asanaPath = path;
+    this.asanaSummary = summary;
+    this.asanaRawErrors = rawErrors;
+  }
+}
+
 function getHeaders() {
   const token = process.env.ASANA_PAT;
   if (!token) throw new Error("ASANA_PAT environment variable is not set");
@@ -68,9 +112,17 @@ async function asanaRequest(method, path, body = null, retries = 3) {
 
       if (!res.ok) {
         const text = await res.text();
-        console.error(`Asana ${method} ${path} failed (${res.status}): ${text}`);
+        const { summary, rawErrors } = summarizeAsanaErrorBody(text);
+        const asanaErr = new AsanaApiError({
+          method,
+          path,
+          status: res.status,
+          summary,
+          rawErrors,
+        });
+        console.error(asanaErr.message);
         if (body) console.error(`Request body: ${JSON.stringify(body).substring(0, 500)}`);
-        throw new Error(`Asana ${method} ${path} failed (${res.status}): ${text}`);
+        throw asanaErr;
       }
       // DELETE returns 200 with empty body sometimes
       if (res.status === 204 || res.headers.get("content-length") === "0") {
@@ -79,7 +131,13 @@ async function asanaRequest(method, path, body = null, retries = 3) {
       return res.json();
     }
 
-    throw new Error(`Asana ${method} ${path} failed after ${retries} retries (rate limited)`);
+    throw new AsanaApiError({
+      method,
+      path,
+      status: 429,
+      summary: `Rate limit exceeded after ${retries} retries`,
+      rawErrors: null,
+    });
   } finally {
     if (isWrite) releaseWriteSlot();
   }
@@ -346,6 +404,8 @@ async function batchCreateTasks(tasksArray) {
 }
 
 module.exports = {
+  AsanaApiError,
+  summarizeAsanaErrorBody,
   createTask,
   createSubtask,
   createSubtasksWithWorkers,
