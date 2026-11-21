@@ -52,7 +52,7 @@ async function executeMaintenanceFlow(payload) {
   const fallbackMaint = M.YACHT_MAINTENANCE[yachtName] || M.YACHT_MAINTENANCE[resolvedYacht] || {};
   const maintProjectGid = rawMaintProjectGid || fallbackMaint.project || null;
   const yachtModel = rawYachtModel || C.BOAT_TO_MODEL[yachtName] || C.BOAT_TO_MODEL[resolvedYacht] || null;
-  const yachtNameId = rawYachtNameId || C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || null;
+  const yachtNameId = C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || rawYachtNameId || null;
   const charterSection = rawCharterSection || fallbackMaint.charterSection || null;
 
   if (!maintProjectGid) {

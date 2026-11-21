@@ -49,7 +49,7 @@ async function executeHousekeepingFlow(payload) {
   const stageHours = rawStageHours || M.YACHT_STAGES[yachtName] || M.YACHT_STAGES[resolvedYacht] || null;
   const acronym = C.YACHT_ACRONYMS[yachtName] || C.YACHT_ACRONYMS[resolvedYacht] || rawAcronym || yachtName?.substring(0, 3);
   const yachtModel = C.BOAT_TO_MODEL[yachtName] || C.BOAT_TO_MODEL[resolvedYacht] || null;
-  const yachtNameId = rawYachtNameId || C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || null;
+  const yachtNameId = C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || rawYachtNameId || null;
   const yachtModelId = rawYachtModelId || (yachtModel ? C.YACHT_MODEL_IDS[yachtModel] : null) || null;
 
   if (!stageHours) {

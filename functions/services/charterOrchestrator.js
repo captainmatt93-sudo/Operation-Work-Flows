@@ -50,7 +50,7 @@ async function orchestrateNewCharter(payload) {
   // Each field: use the explicit *_id if provided, else resolve from the name map.
   const charterTypeId   = data.charter_type_id   || C.CHARTER_TYPE_IDS[data.charter_type?.trim()]   || null;
   const salesAgentId    = data.sales_agent_id    || C.SALES_AGENT_IDS[data.sales_agent?.trim()]     || null;
-  const yachtNameId     = data.yacht_name_id     || C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || null;
+  const yachtNameId     = C.YACHT_NAME_GIDS[yachtName] || C.YACHT_NAME_GIDS[resolvedYacht] || data.yacht_name_id || null;
   const yachtModelId    = data.yacht_model_id    || C.YACHT_MODEL_IDS[yachtModel]                   || null;
   const boardingTimeGid = data.boarding_time?.gid || data.boarding_time_gid || C.BOARDING_TIME_IDS[boardingDisplay] || null;
 
@@ -61,30 +61,31 @@ async function orchestrateNewCharter(payload) {
   log(4, `Charter template: ${template.gid} | Checkout template: ${checkoutTemplateGid}`);
 
   // ══════════════════════════════════════════════════════════════
-  // GROUP A — tracking task + both project duplications
-  // All three are independent and each takes ~8-12s.
-  // Running concurrently saves ~12-15s vs sequential.
+  // GROUP A — tracking task first (fail fast on enum/field errors),
+  // then both project duplications concurrently with rollback on partial failure.
   // ══════════════════════════════════════════════════════════════
-  log("A", "Group A — tracking task + charter project + checkout project (concurrent)");
-  const [trackingTaskResult, charterProjectGid, checkoutProjectGid] = await Promise.all([
+  log("A", "Group A — tracking task + charter project + checkout project");
 
-    // Step 3: Create tracking task on Charter Info board
-    asana.createTask({
-      name: charterName,
-      projects: [C.BOARDS.CHARTER_INFO],
-      custom_fields: {
-        [C.CUSTOM_FIELDS.YACHT_NAME]:       yachtNameId,
-        [C.CUSTOM_FIELDS.CHARTER_TYPE]:     charterTypeId,
-        [C.CUSTOM_FIELDS.START_DATE]:       data.start_date,
-        [C.CUSTOM_FIELDS.END_DATE]:         data.end_date,
-        [C.CUSTOM_FIELDS.CHARTER_NUMBER]:   data.charter_number,
-        [C.CUSTOM_FIELDS.NUMBER_OF_GUESTS]: data.number_of_guests ? String(data.number_of_guests) : null,
-        [C.CUSTOM_FIELDS.START_DAY]:        data.start_day || null,
-        [C.CUSTOM_FIELDS.END_DAY]:          data.end_day   || null,
-      },
-    }),
+  // Step 3: Create tracking task on Charter Info board first (<1s) so bad custom fields never orphan project copies
+  const trackingTaskResult = await asana.createTask({
+    name: charterName,
+    projects: [C.BOARDS.CHARTER_INFO],
+    custom_fields: {
+      [C.CUSTOM_FIELDS.YACHT_NAME]:       yachtNameId,
+      [C.CUSTOM_FIELDS.CHARTER_TYPE]:     charterTypeId,
+      [C.CUSTOM_FIELDS.START_DATE]:       data.start_date,
+      [C.CUSTOM_FIELDS.END_DATE]:         data.end_date,
+      [C.CUSTOM_FIELDS.CHARTER_NUMBER]:   data.charter_number,
+      [C.CUSTOM_FIELDS.NUMBER_OF_GUESTS]: data.number_of_guests ? String(data.number_of_guests) : null,
+      [C.CUSTOM_FIELDS.START_DAY]:        data.start_day || null,
+      [C.CUSTOM_FIELDS.END_DAY]:          data.end_day   || null,
+    },
+  });
+  const trackingTaskGid = trackingTaskResult.data.gid;
+  log(3, `Tracking task created: ${trackingTaskGid}`);
 
-    // Steps 4-5: Duplicate charter project from template
+  // Steps 4-5 & 9: Duplicate charter & checkout templates concurrently; clean up on partial failure
+  const [charterDupRes, checkoutDupRes] = await Promise.allSettled([
     (async () => {
       log(5, `Duplicating charter template ${template.gid} as "${charterName}"`);
       const newProject = await asana.duplicateProject(template.gid, charterName, template.color);
@@ -92,8 +93,6 @@ async function orchestrateNewCharter(payload) {
       log(5, `Charter project created: ${gid}`);
       return gid;
     })(),
-
-    // Step 9: Duplicate checkout project from template
     (async () => {
       log(9, `Duplicating checkout template ${checkoutTemplateGid} as "${checkoutName}"`);
       const checkoutProject = await asana.duplicateProject(checkoutTemplateGid, checkoutName);
@@ -102,8 +101,23 @@ async function orchestrateNewCharter(payload) {
       return gid;
     })(),
   ]);
-  const trackingTaskGid = trackingTaskResult.data.gid;
-  log(3, `Tracking task created: ${trackingTaskGid}`);
+
+  if (charterDupRes.status === "rejected" || checkoutDupRes.status === "rejected") {
+    const cleanupPromises = [
+      asana.deleteTask(trackingTaskGid).catch(() => {}),
+    ];
+    if (charterDupRes.status === "fulfilled" && charterDupRes.value) {
+      cleanupPromises.push(asana.deleteProject(charterDupRes.value).catch(() => {}));
+    }
+    if (checkoutDupRes.status === "fulfilled" && checkoutDupRes.value) {
+      cleanupPromises.push(asana.deleteProject(checkoutDupRes.value).catch(() => {}));
+    }
+    await Promise.all(cleanupPromises);
+    throw (charterDupRes.status === "rejected" ? charterDupRes.reason : checkoutDupRes.reason);
+  }
+
+  const charterProjectGid = charterDupRes.value;
+  const checkoutProjectGid = checkoutDupRes.value;
 
   // Asana populates the duplicated project sections/tasks asynchronously.
   // Poll until the charter project has real named sections (not just "Untitled Section").

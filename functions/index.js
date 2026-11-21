@@ -135,10 +135,11 @@ function normalizePayload(rawData) {
   d.yacht_model = resolvedModel;
   d.yacht_model_id = resolvedModel ? (C.YACHT_MODELS[resolvedModel] || null) : null;
   d.sales_agent_id = d.sales_agent ? (C.SALES_AGENTS[d.sales_agent] || null) : null;
-  // Auto-resolve yacht_name_id from the YACHT_NAME_GIDS map if not provided
-  d.yacht_name_id = d.yacht_name_id
-    || (d.yacht_name ? (C.YACHT_NAME_GIDS[d.yacht_name] || (resolvedYacht ? C.YACHT_NAME_GIDS[resolvedYacht] : null)) : null)
-    || null;
+  // Auto-resolve yacht_name_id from canonical YACHT_NAME_GIDS map first (prevents stale/disabled IDs from breaking Asana calls)
+  const mappedYachtNameId = d.yacht_name
+    ? (C.YACHT_NAME_GIDS[d.yacht_name] || (resolvedYacht ? C.YACHT_NAME_GIDS[resolvedYacht] : null))
+    : null;
+  d.yacht_name_id = mappedYachtNameId || d.yacht_name_id || null;
   d.charter_type_id = d.charter_type_id || null;
 
   // Auto-resolve start_day / end_day GIDs from date when not provided by caller
@@ -244,6 +245,7 @@ exports.charterEvents = onRequest(
     } : {};
     if (data._queuedAt) logger.info(`[QUEUE] Processing dequeued ${action} for ${charterNumber} (waited ${queueMeta.queueWaitMs}ms)`);
 
+    let auditId = null;
     try {
       switch (action) {
         case "Create": {
@@ -253,7 +255,7 @@ exports.charterEvents = onRequest(
             return res.status(400).json({ error: valErr });
           }
 
-          const auditId = await createAuditEvent(charterNumber, {
+          auditId = await createAuditEvent(charterNumber, {
             action: "Create",
             charterNumber,
             yachtName: data.yacht_name,
@@ -329,7 +331,7 @@ exports.charterEvents = onRequest(
             return res.status(400).json({ error: valErr });
           }
 
-          const auditId = await createAuditEvent(charterNumber, {
+          auditId = await createAuditEvent(charterNumber, {
             action: "Delete",
             charterNumber,
             yachtName: data.yacht_name,
@@ -364,7 +366,7 @@ exports.charterEvents = onRequest(
             return res.status(400).json({ error: valErr });
           }
 
-          const auditId = await createAuditEvent(charterNumber, {
+          auditId = await createAuditEvent(charterNumber, {
             action: "Edit",
             charterNumber,
             yachtName: data.yacht_name,
@@ -475,10 +477,16 @@ exports.charterEvents = onRequest(
       }
     } catch (err) {
       logger.error(`Orchestration failed [${action}]: ${err.message}`, { stack: err.stack });
+      if (auditId) {
+        await updateAuditEvent(charterNumber, auditId, {
+          success: false,
+          error: err.message,
+        }).catch(() => {});
+      }
       // Release lock on error so queued ops aren't stuck
       await releaseOperationLock(charterNumber).catch(() => {});
       processQueuedOperation(charterNumber);
-      return res.status(500).json({ error: "Internal server error" });
+      return res.status(500).json({ error: err.message || "Internal server error" });
     }
   }
 );
